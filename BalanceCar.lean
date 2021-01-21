@@ -3,15 +3,7 @@
 
 namespace Float
 
-def ofInt : Int → Float
-  | Int.ofNat n => Float.ofNat n
-  | Int.negSucc n => 0 - (Float.ofNat (Nat.succ n))
-
 instance : Coe Int Float := ⟨Float.ofInt⟩
-
-@[extern c inline "(- #1)"]  constant neg : Float → Float
-
-instance : Neg Float := ⟨neg⟩
 
 @[extern "fabs"] constant abs : Float → Float
 
