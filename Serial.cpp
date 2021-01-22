@@ -19,16 +19,20 @@ int serial_port = -1;
 unsigned char buffer[256];
 
 #define CHECK_SERIAL_PORT() do { \
-  if (serial_port < 0) initialize_serial_port(); \
+  if (serial_port < 0) { \
+    fprintf(stderr, "ERROR: serial port is not initialized!"); \
+    fprintf(stderr, "       See `initializeSerialPort` in `BalanceCar.lean`."); \
+    exit(1); \
+  } \
 } while (0)
 
-extern "C" void initialize_serial_port() {
+extern "C" bool lean_initialize_serial_port(b_lean_obj_arg port_path, speed_t baudrate) {
   // Open the serial port. Change device path as needed (currently set to an standard FTDI USB-UART cable type device)
-  serial_port = open("/dev/ttyUSB0", O_RDWR);
+  serial_port = open(lean_string_cstr(port_path), O_RDWR);
 
   // Read in existing settings, and handle any error
   if(tcgetattr(serial_port, &tty) != 0) {
-    fprintf(stderr, "ERROR: %i from tcgetattr: %s\n", errno, strerror(errno));
+    fprintf(stderr, "PORT INITIALIZATION ERROR: %i from tcgetattr: %s\n", errno, strerror(errno));
     exit(1);
   }
 
@@ -55,13 +59,13 @@ extern "C" void initialize_serial_port() {
   tty.c_cc[VTIME] = 10;    // Wait for up to 1s (10 deciseconds), returning as soon as any data is received.
   tty.c_cc[VMIN] = 0;
 
-  // Set in/out baud rate to be 115200
-  cfsetispeed(&tty, B115200);
-  cfsetospeed(&tty, B115200);
+  // Set in/out baud rate
+  cfsetispeed(&tty, baudrate);
+  cfsetospeed(&tty, baudrate);
 
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
-    fprintf(stderr, "ERROR: %i from tcsetattr: %s\n", errno, strerror(errno));
+    fprintf(stderr, "PORT INITIALIZATION ERROR: %i from tcsetattr: %s\n", errno, strerror(errno));
     exit(1);
   }
 
@@ -69,6 +73,8 @@ extern "C" void initialize_serial_port() {
   // ASCII data for this example, we'll set everything to 0 so we can
   // call printf() easily.
   memset(&buffer, '\0', sizeof(buffer));
+
+  return lean::io_result_mk_ok(lean_box(0));
 }
 
 extern "C" lean_object * lean_digital_pin_write(uint8_t pin, bool value) {

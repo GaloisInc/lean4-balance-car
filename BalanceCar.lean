@@ -17,6 +17,45 @@ def pi : Float := 3.1415926535897932384626433832795
 
 end Float
 
+/-- Common baud rates for serial ports. -/
+inductive BaudRate
+  | bps1200
+  | bps2400
+  | bps4800
+  | bps9600
+  | bps19200
+  | bps38400
+  | bps57600
+  | bps115200
+
+namespace BaudRate
+
+/-- Converts a BaudRate into the uint16 value it is defined as
+    in C (i.e., see the C `speed_t` type and associated C macros). -/
+def toUInt16 : BaudRate → UInt16
+  | bps1200    => 9    -- 0000011
+  | bps2400    => 11   -- 0000013
+  | bps4800    => 12   -- 0000014
+  | bps9600    => 13   -- 0000015
+  | bps19200   => 14   -- 0000016
+  | bps38400   => 15   -- 0000017
+  | bps57600   => 4097 -- 0010001
+  | bps115200  => 4098 -- 0010002
+
+def ofNat? : Nat → Option BaudRate
+  | 1200   => some bps1200
+  | 2400   => some bps2400
+  | 4800   => some bps4800
+  | 9600   => some bps9600
+  | 19200  => some bps19200
+  | 38400  => some bps38400
+  | 57600  => some bps57600
+  | 115200 => some bps115200
+  | _      => none
+
+end BaudRate
+
+
 -- Arduino related constants
 def pin1 : UInt8 := 1
 def pin2 : UInt8 := 2
@@ -369,7 +408,8 @@ def commandCar (car : BalanceCar) : Cmd → BalanceCar
 
 
 
--- TODO implement these two IO actions in C
+@[extern "lean_initialize_serial_port"]
+constant initializeSerialPort (portPath : @& String) (baudRate : UInt16) : IO Unit
 @[extern "lean_digital_pin_write"] 
 constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
 @[extern "lean_analog_pin_write"]
@@ -424,9 +464,27 @@ def controlLoop (car : BalanceCar) : IO Unit := do
   -- TODO support manual control of car (commandCar) in addition to balancing
 
 
+private def printSupportedBaudRates : IO Unit :=
+  IO.println   "  Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
+
+
 unsafe
 def main (args : List String) : IO Unit := do
-  -- TODO setup connection?
-  controlLoop BalanceCar.initial
-
+  let invalidBaudRate : String → IO Unit := λ rate => do
+    IO.println $ "Invalid baude rate: " ++ rate
+    IO.println   "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
+  match args with
+  | [port, rate] =>
+    match String.toNat? rate with
+    | some n =>
+      match BaudRate.ofNat? n with
+      | some bps => do
+        initializeSerialPort port bps.toUInt16
+        controlLoop BalanceCar.initial
+      | none => invalidBaudRate rate
+    | none => invalidBaudRate rate
+  | _ => do
+    IO.println "usage: `balance-car PORT BAUDRATE`"
+    IO.println "e.g., `balance-car /dev/ttyS0 115200`"
+    IO.println "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
 
