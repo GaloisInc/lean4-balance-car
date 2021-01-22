@@ -127,10 +127,10 @@ void serial_rx()
       {
         switch(rx_pin)
         {
-          case 1: digitalWrite(Pin1, rx_val == 0 ? LOW : HIGH); break;
-          case 2: digitalWrite(Pin2, rx_val == 0 ? LOW : HIGH); break;
-          case 3: digitalWrite(Pin3, rx_val == 0 ? LOW : HIGH); break;
-          case 4: digitalWrite(Pin4, rx_val == 0 ? LOW : HIGH); break;
+          case 1: digitalWrite(IN1M, rx_val == 0 ? LOW : HIGH); break;
+          case 2: digitalWrite(IN2M, rx_val == 0 ? LOW : HIGH); break;
+          case 3: digitalWrite(IN3M, rx_val == 0 ? LOW : HIGH); break;
+          case 4: digitalWrite(IN4M, rx_val == 0 ? LOW : HIGH); break;
           default: break; // this shouldn't happen...
         }
         break;
@@ -139,8 +139,8 @@ void serial_rx()
       {
         switch(rx_pin)
         {
-          case 5: analogWrite(PinPWMA, rx_val); break;
-          case 6: analogWrite(PinPWMB, rx_val); break;
+          case 5: analogWrite(PWMA, rx_val); break;
+          case 6: analogWrite(PWMB, rx_val); break;
           default: break; // this shouldn't happen...
         }
       }
