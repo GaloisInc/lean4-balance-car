@@ -14,11 +14,18 @@
 #include <lean/object.h>
 #include <lean/io.h>
 
-struct termios tty;
-int serial_port = -1;
-unsigned char buffer[256];
+#define DEBUG 0
 
-#define CHECK_SERIAL_PORT() do { \
+#define LOG(fmt, ...) do \
+{ \
+  if (DEBUG) { \
+    fprintf(stderr, "[LOG] "); \
+    fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__); \
+  } \
+} while (0)
+
+#define CHECK_SERIAL_PORT() do \
+{ \
   if (serial_port < 0) { \
     fprintf(stderr, "ERROR: serial port is not initialized!"); \
     fprintf(stderr, "       See `initializeSerialPort` in `BalanceCar.lean`."); \
@@ -26,16 +33,25 @@ unsigned char buffer[256];
   } \
 } while (0)
 
-extern "C" bool lean_initialize_serial_port(b_lean_obj_arg port_path, speed_t baudrate) {
+struct termios tty;
+int serial_port = -1;
+unsigned char buffer[256];
+
+extern "C" lean_object * lean_initialize_serial_port(b_lean_obj_arg port_path, speed_t baudrate, lean_object /* w */) {
+  LOG("entering lean_initialize_serial_port\n");
+  LOG("opening serial port at %s\n", lean_string_cstr(port_path));
   // Open the serial port. Change device path as needed (currently set to an standard FTDI USB-UART cable type device)
   serial_port = open(lean_string_cstr(port_path), O_RDWR);
-
+  LOG("serial_port = %d\n", serial_port);
   // Read in existing settings, and handle any error
   if(tcgetattr(serial_port, &tty) != 0) {
-    fprintf(stderr, "PORT INITIALIZATION ERROR: %i from tcgetattr: %s\n", errno, strerror(errno));
+    fprintf(stderr, "ERROR for %s: %i from tcgetattr: %s\n",
+      lean_string_cstr(port_path),
+      errno,
+      strerror(errno));
     exit(1);
   }
-
+  LOG("setting tty.c_flags\n");
   tty.c_cflag &= ~PARENB; // Clear parity bit, disabling parity (most common)
   tty.c_cflag &= ~CSTOPB; // Clear stop field, only one stop bit used in communication (most common)
   tty.c_cflag &= ~CSIZE; // Clear all bits that set the data size 
@@ -59,13 +75,15 @@ extern "C" bool lean_initialize_serial_port(b_lean_obj_arg port_path, speed_t ba
   tty.c_cc[VTIME] = 10;    // Wait for up to 1s (10 deciseconds), returning as soon as any data is received.
   tty.c_cc[VMIN] = 0;
 
+  LOG("setting in/out baud rate\n");
   // Set in/out baud rate
   cfsetispeed(&tty, baudrate);
   cfsetospeed(&tty, baudrate);
 
+  LOG("saving tty settings\n");
   // Save tty settings, also checking for error
   if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
-    fprintf(stderr, "PORT INITIALIZATION ERROR: %i from tcsetattr: %s\n", errno, strerror(errno));
+    fprintf(stderr, "ERROR: %i from tcsetattr: %s\n", errno, strerror(errno));
     exit(1);
   }
 
@@ -74,19 +92,23 @@ extern "C" bool lean_initialize_serial_port(b_lean_obj_arg port_path, speed_t ba
   // call printf() easily.
   memset(&buffer, '\0', sizeof(buffer));
 
-  return lean::io_result_mk_ok(lean_box(0));
+  LOG("exiting lean_initialize_serial_port\n");
+  return lean_io_result_mk_ok(lean_box(0));
 }
 
-extern "C" lean_object * lean_digital_pin_write(uint8_t pin, bool value) {
+extern "C" lean_object * lean_digital_pin_write(uint8_t pin, bool value, lean_object /* w */) {
+  LOG("entering lean_digital_pin_write\n");
   CHECK_SERIAL_PORT();
   buffer[0] = 'd';
   buffer[1] = pin;
   buffer[2] = value ? 0b11111111 : 0b00000000;
   write(serial_port, buffer, 3);
-  return lean::io_result_mk_ok(lean_box(0));
+  LOG("exiting lean_digital_pin_write\n");
+  return lean_io_result_mk_ok(lean_box(0));
 }
 
-extern "C" lean_object * lean_analog_pin_write(uint8_t pin, double value) {
+extern "C" lean_object * lean_analog_pin_write(uint8_t pin, double value, lean_object /* w */) {
+  LOG("entering lean_analog_pin_write\n");
   CHECK_SERIAL_PORT();
   value = value < 0 ? -value : value;
   value = value > 255 ? 255 : value;
@@ -94,14 +116,17 @@ extern "C" lean_object * lean_analog_pin_write(uint8_t pin, double value) {
   buffer[1] = pin;
   buffer[2] = (uint8_t) value;
   write(serial_port, buffer, 3);
-  return lean::io_result_mk_ok(lean_box(0));
+  LOG("exiting lean_analog_pin_write\n");
+  return lean_io_result_mk_ok(lean_box(0));
 }
 
-extern "C" uint32_t lean_rx_char_as_uint32() {
+extern "C" lean_object * lean_rx_char_as_uint32(lean_object /* w */) {
+  LOG("entering lean_rx_char_as_uint32\n");
   CHECK_SERIAL_PORT();
-  int num_bytes = read(serial_port, &buffer, 1);
+  int num_bytes = read(serial_port, buffer, 1);
   if (num_bytes == 1) {
-      return buffer[0];
+      LOG("exiting lean_rx_char_as_uint32\n");
+      return lean_io_result_mk_ok(lean_box((uint32_t) buffer[0]));
   } else {
       fprintf(
         stderr,
@@ -111,18 +136,28 @@ extern "C" uint32_t lean_rx_char_as_uint32() {
   }
 }
 
-extern "C" lean_obj_res lean_rx_int16_as_int() {
+extern "C" lean_obj_res lean_rx_int16_as_int(lean_object /* w */) {
+  LOG("entering lean_rx_int16_as_int\n");
   CHECK_SERIAL_PORT();
-  int num_bytes = read(serial_port, &buffer, 2);
-  if (num_bytes == 2) {
-    uint16_t val = buffer[0] | (uint16_t)buffer[1] << 8;
-    return lean_int_to_int(val);
-  } else {
-    fprintf(
-      stderr,
-      "ERROR: failed to read two bytes in lean_rx_int16_as_int, instead got %d",
-      num_bytes);
-    exit(1);
-  }
+  int num_bytes = 2;
+  int res;
+  unsigned char *ptr = buffer;
+  do {
+    res = read(serial_port, ptr, num_bytes);
+    if (res <= 0) {
+      fprintf(stderr, "ERROR: lean_rx_int16_as_int read failure, got %d", res);
+      exit(1);
+    } else if (res <= num_bytes) {
+      num_bytes -= res;
+      ptr += res;
+    } else {
+      fprintf(stderr, "ERROR: lean_rx_int16_as_int read %d but expected %d", res, num_bytes);
+      exit(1);
+    }
+  } while (num_bytes > 0);
+
+  uint16_t val = (uint16_t)buffer[1] << 8 | buffer[0]; // Not positive on the endianness here...
+  LOG("exiting lean_rx_int16_as_int\n");
+  return lean_io_result_mk_ok(lean_int_to_int(val));
 }
 
