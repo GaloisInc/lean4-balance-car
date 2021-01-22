@@ -11,8 +11,6 @@
 #include <MsTimer2.h>
 //Realizing Speed ​​PID Control by Using Speed ​​Measuring Code Disk to Count
 
-#include <BalanceCar.h>
-
 //I2Cdev、MPU605 with PID_v1
 // The class library needs to be installed in advance Arduino 
 // under the class library folder.
@@ -22,8 +20,27 @@
 
 
 
+
+struct BalanceCar {
+  int pulseright;
+  int pulseleft;
+  int posture;
+  int stopl;
+  int stopr;
+  double angleoutput;
+  double pwm1;
+  double pwm2;
+  float speeds_filterold;
+  float positions;
+  int turnmax;
+  int turnmin;
+  float turnout;
+  int flag1;
+};
+
+
 MPU6050 mpu; //Instantiate one MPU6050 Object, the object name ismpu
-BalanceCar balancecar;
+BalanceCar car;
 int16_t ax, ay, az, gx, gy, gz;
 //TB6612FNG Drive module control signal
 #define IN1M 7
@@ -41,6 +58,8 @@ int16_t ax, ay, az, gx, gy, gz;
 
 #define PinA_left 2  //Interrupt 0
 #define PinA_right 4 //Interrupt 1
+
+
 
 
 
@@ -139,6 +158,123 @@ int jishi = 0; // even if
 
 
 
+//////////////////////BalanceCar Methods///////////////////////
+double speedpiout(double kps,double kis,double kds,int f,int b,double p0)
+{
+  float speeds = (car.pulseleft + car.pulseright) * 1.0;
+  car.pulseright = 0;
+  car.pulseleft = 0;
+  car.speeds_filterold *= 0.7;
+  float speeds_filter = car.speeds_filterold + speeds * 0.3;
+  car.speeds_filterold = speeds_filter;
+  car.positions += speeds_filter;
+  car.positions += f;
+  car.positions += b;
+  car.positions = constrain(car.positions, -3550,3550);
+  double output = kis * (p0 - car.positions) + kps * (p0 - speeds_filter);
+  if(car.flag1 == 1)
+  {
+    car.positions = 0;
+  }
+  
+  return output;
+}
+
+
+float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,double kpturn,double kdturn,float Gyroz)
+{
+  int spinonce = 0;
+  float turnspeed = 0;
+  float rotationratio = 0;
+  float turnout_put = 0;
+  
+  if (turnleftflag == 1 || turnrightflag == 1 || spinleftflag == 1 || spinrightflag == 1)
+  {
+    if (spinonce == 0)
+    {
+      turnspeed = (car.pulseright + car.pulseleft);
+      spinonce++;
+    }
+    if (turnspeed < 0)
+    {
+      turnspeed = -turnspeed;
+    }
+    if(turnleftflag == 1 || turnrightflag == 1)
+    {
+     car.turnmax = 3;
+     car.turnmin =- 3;
+    }
+    if( spinleftflag == 1 || spinrightflag == 1)
+    {
+      car.turnmax=10;
+      car.turnmin=-10;
+    }
+    rotationratio = 5 / turnspeed;
+    if (rotationratio < 0.5) rotationratio = 0.5;
+    if (rotationratio > 5) rotationratio = 5;
+  }
+  else
+  {
+    rotationratio = 0.5;
+    spinonce = 0;
+    turnspeed = 0;
+  }
+  if (turnleftflag == 1 || spinleftflag == 1)
+  {
+    car.turnout += rotationratio;
+  }
+  else if (turnrightflag == 1 || spinrightflag == 1)
+  {
+    car.turnout -= rotationratio;
+  }
+  else
+    car.turnout = 0;
+  if (car.turnout > car.turnmax) car.turnout = car.turnmax;
+  if (car.turnout < car.turnmin) car.turnout = car.turnmin;
+
+  turnout_put = -car.turnout * kpturn - Gyroz * kdturn;
+  return turnout_put;
+}
+
+void pwma(double speedoutput,float rotationoutput,float angle,float angle6,int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,
+  int f,int b,float accelz)
+{
+
+  car.pwm1 = -car.angleoutput - speedoutput - rotationoutput;
+  car.pwm2 = -car.angleoutput - speedoutput + rotationoutput;
+
+  if (car.pwm1 > 255)  car.pwm1 = 255;
+  if (car.pwm1 < -255) car.pwm1 = -255;
+  if (car.pwm2 > 255)  car.pwm2 = 255;
+  if (car.pwm2 < -255) car.pwm2 = -255;
+
+  if (angle > 30 || angle < -30)
+  {
+    car.pwm1 = 0;
+    car.pwm2 = 0;
+  }
+  
+  if (angle6 > 10 || angle6 < -10 &turnleftflag == 0 & turnrightflag == 0 & spinleftflag == 0 & spinrightflag == 0 && f == 0 && b == 0)
+  {
+    if(car.stopl + car.stopr > 1500 || car.stopl + car.stopr < -3500)
+    {
+      car.pwm1  = 0;
+      car.pwm2  = 0;
+      car.flag1 = 1;
+    }
+  }
+  else 
+  {
+   car.stopl = 0;
+   car.stopr = 0;
+   car.flag1 = 0;
+  }
+}
+
+
+
+
+
 //////////////////////Pulse calculation///////////////////////
 void countpluse()
 {
@@ -152,7 +288,7 @@ void countpluse()
   rpluse = rz;
 
 
-  if ((balancecar.pwm1 < 0) && (balancecar.pwm2 < 0)) 
+  if ((car.pwm1 < 0) && (car.pwm2 < 0)) 
   {
     // Judgment of the direction of movement of the trolley.
     // When moving backwards (PWM means the motor voltage is negative), 
@@ -160,7 +296,7 @@ void countpluse()
     rpluse = -rpluse;
     lpluse = -lpluse;
   }
-  else if ((balancecar.pwm1 > 0) && (balancecar.pwm2 > 0))
+  else if ((car.pwm1 > 0) && (car.pwm2 > 0))
   {
     // Judgment of the direction of movement of the trolley.
     // When moving forward (PWM, that is, the motor voltage is
@@ -168,7 +304,7 @@ void countpluse()
     rpluse = rpluse;
     lpluse = lpluse;
   }
-  else if ((balancecar.pwm1 < 0) && (balancecar.pwm2 > 0)) 
+  else if ((car.pwm1 < 0) && (car.pwm2 > 0)) 
   {
     // Judgment of the direction of movement of the trolley.
     // When moving forward (PWM, that is, the motor voltage is
@@ -176,7 +312,7 @@ void countpluse()
     rpluse = rpluse;
     lpluse = -lpluse;
   }
-  else if ((balancecar.pwm1 > 0) && (balancecar.pwm2 < 0))
+  else if ((car.pwm1 > 0) && (car.pwm2 < 0))
   {
     // Judgment of the direction of movement of the trolley.
     // Rotate left, the number of right pulses is negative,
@@ -194,13 +330,13 @@ void countpluse()
   //  }
 
   // Raise judgment
-  balancecar.stopr += rpluse;
-  balancecar.stopl += lpluse;
+  car.stopr += rpluse;
+  car.stopl += lpluse;
 
   // When entering interrupt every 5ms, 
   // the number of pulses is superimposed.
-  balancecar.pulseright += rpluse;
-  balancecar.pulseleft += lpluse;
+  car.pulseright += rpluse;
+  car.pulseleft += lpluse;
 
 }
 
@@ -208,18 +344,14 @@ void countpluse()
 ////////////////// Angle PD ////////////////////
 void angleout()
 {
-  balancecar.angleoutput = kp * (angle + angle0) + kd * Gyro_x;//PD 角度环控制
+  car.angleoutput = kp * (angle + angle0) + kd * Gyro_x;//PD 角度环控制
 }
-
-#define INIT_FUEL 200  // printing every 200 5ms interrupts == every 1 seconds
-int fuel = INIT_FUEL; 
 
 /////////////////////////////////////////////////////////////////////////////
 ////////////////// Interrupt timing 5ms timing interrupt ////////////////////
 /////////////////////////////////////////////////////////////////////////////
 void inter()
 {
-  fuel -= 1;
   // Open interrupt. Due to the limitation of the AVR chip, no matter
   // any interrupt is entered, the chip will close the total interrupt
   // in the corresponding interrupt function, which will affect the angle
@@ -230,16 +362,6 @@ void inter()
   countpluse(); // Pulse superposition subroutine
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-  if (fuel <= 0)
-  {
-    fuel = INIT_FUEL;
-    Serial.print("ax: "); Serial.print(ax, DEC);
-    Serial.print(", ay: "); Serial.print(ay, DEC);
-    Serial.print(", az: "); Serial.print(az, DEC);
-    Serial.print(", gx: "); Serial.print(gx, DEC);
-    Serial.print(", gy: "); Serial.print(gy, DEC);
-    Serial.print(", gz: "); Serial.println(gz, DEC);
-  }
   
   // Get angle and Kalman filter
   Angletest();
@@ -250,19 +372,39 @@ void inter()
   if (turncount > 1)
   {
     // Rotation function
-    turnoutput = balancecar.turnspin(turnl,turnr,spinl,spinr,kp_turn,kd_turn,Gyro_z);                                    
+    turnoutput = turnspin(turnl,turnr,spinl,spinr,kp_turn,kd_turn,Gyro_z);                                    
     turncount = 0;
   }
   speedcc++;
   // 50ms into speed loop control
   if (speedcc >= 10)
   {
-    Outputs = balancecar.speedpiout(kp_speed,ki_speed,kd_speed,front,back,setp0);
+    Outputs = speedpiout(kp_speed,ki_speed,kd_speed,front,back,setp0);
     speedcc = 0;
   }
-  balancecar.posture++;
+  car.posture++;
   // Total PWM output of trolley
-  balancecar.pwma(Outputs,turnoutput,angle,angle6, turnl,turnr,spinl,spinr,front,back,accelz,IN1M,IN2M,IN3M,IN4M,PWMA,PWMB);
+  pwma(Outputs,turnoutput,angle,angle6, turnl,turnr,spinl,spinr,front,back,accelz);
+
+  if (car.pwm1 >= 0) {
+    digitalWrite(IN2M, 0);
+    digitalWrite(IN1M, 1);
+    analogWrite(PWMA, car.pwm1);
+  } else {
+    digitalWrite(IN2M, 1);
+    digitalWrite(IN1M, 0);
+    analogWrite(PWMA, -car.pwm1);
+  }
+  //电机的正负输出判断        右电机判断
+  if (car.pwm2 >= 0) {
+    digitalWrite(IN4M, 0);
+    digitalWrite(IN3M, 1);
+    analogWrite(PWMB, car.pwm2);
+  } else {
+    digitalWrite(IN4M, 1);
+    digitalWrite(IN3M, 0);
+    analogWrite(PWMB, -car.pwm2);
+  }
 }
 //////////////////////////////////////////////
 //////////// Interrupt timing ////////////////
