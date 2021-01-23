@@ -50,10 +50,14 @@ int16_t ax, ay, az, gx, gy, gz;
 #define PWMA 9
 #define PWMB 10
 #define STBY 8
-
-#define tx A0
-#define rx A1
-
+#define kp_speed 3.1
+#define ki_speed 0.05
+#define kd_speed 0.0 // The parameters you need to modify
+#define kp_turn 28
+#define ki_turn 0
+#define kd_turn 0.29 // Spin PID set up
+#define kp 38
+#define kd 0.58  // The parameters you need to modify
 
 
 #define PinA_left 2  //Interrupt 0
@@ -65,18 +69,9 @@ int16_t ax, ay, az, gx, gy, gz;
 
 // Declare custom variables
 int time;
-byte inByte; // Serial port receive byte
-int num;
 float angle, angle_dot;  // Balance angle value
-double Setpoint;  // Angle DIP Set point, input, output
-double kp = 38, ki = 0.0, kd = 0.58;  // The parameters you need to modify
-double Setpoints, Outputs = 0; //Speed DIP Set point, input, output
-double kp_speed = 3.1, ki_speed = 0.05, kd_speed = 0.0; // The parameters you need to modify
-double kp_turn = 28, ki_turn = 0, kd_turn = 0.29; // Spin PID set up
-// Turn to PID parameter
+double Outputs = 0; //Speed DIP Set point, input, output
 
-double setp0 = 0, dpwm = 0, dl = 0; // Angle balance point, PWM difference, dead zone, PWM1, PWM2
-float value;
 
 
 //********************angle data*********************//
@@ -88,9 +83,9 @@ float Angle_ax; // Tilt angle calculated from acceleration
 float Angle_ay;
 float angleAx;
 float angle6;
-float K1 = 0.05; // Weight of accelerometer value
+#define K1 0.05 // Weight of accelerometer value
 float Angle; // The final tilt angle of the trolley calculated by the first-order complementary filter
-float angle0 = 0.00; // Mechanical balance angle
+#define angle0 0.00 // Mechanical balance angle
 float accelz = 0;
 int slong;
 
@@ -101,11 +96,13 @@ float P[2][2] = {{ 1, 0 },
   { 0, 1 }
 };
 float Pdot[4] = { 0, 0, 0, 0};
-float Q_angle = 0.001, Q_gyro = 0.005; // Confidence of angular data, confidence of angular velocity data
-float R_angle = 0.5 , C_0 = 1;
+#define qAngle 0.001
+#define qGyro 0.005
+#define rAngle 0.5
+#define c0 1
 float q_bias, angle_err, PCt_0, PCt_1, E, K_0, K_1, t_0, t_1;
-float timeChange = 5; // Filter method sampling interval milliseconds
-float dt = timeChange * 0.001; // Note: the value of dt is the filter sampling time
+#define sampleIntervalMs 5
+#define dt (sampleIntervalMs * 0.001) // Note: the value of dt is the filter sampling time
 //***************Kalman_Filter*********************//
 
 // Declare MPU6050 control and status variables
@@ -159,7 +156,7 @@ int jishi = 0; // even if
 
 
 //////////////////////BalanceCar Methods///////////////////////
-double speedpiout(double kps,double kis,double kds,int f,int b,double p0)
+double speedpiout(int f,int b)
 {
   float speeds = (car.pulseleft + car.pulseright) * 1.0;
   car.pulseright = 0;
@@ -171,7 +168,7 @@ double speedpiout(double kps,double kis,double kds,int f,int b,double p0)
   car.positions += f;
   car.positions += b;
   car.positions = constrain(car.positions, -3550,3550);
-  double output = kis * (p0 - car.positions) + kps * (p0 - speeds_filter);
+  double output = ki_speed * (0.0 - car.positions) + kp_speed * (0.0 - speeds_filter);
   if(car.flag1 == 1)
   {
     car.positions = 0;
@@ -181,14 +178,14 @@ double speedpiout(double kps,double kis,double kds,int f,int b,double p0)
 }
 
 
-float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,double kpturn,double kdturn,float Gyroz)
+float turnspin()
 {
   int spinonce = 0;
   float turnspeed = 0;
   float rotationratio = 0;
   float turnout_put = 0;
   
-  if (turnleftflag == 1 || turnrightflag == 1 || spinleftflag == 1 || spinrightflag == 1)
+  if (turnl == 1 || turnr == 1 || spinl == 1 || spinr == 1)
   {
     if (spinonce == 0)
     {
@@ -199,12 +196,12 @@ float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinright
     {
       turnspeed = -turnspeed;
     }
-    if(turnleftflag == 1 || turnrightflag == 1)
+    if(turnl == 1 || turnr == 1)
     {
      car.turnmax = 3;
      car.turnmin =- 3;
     }
-    if( spinleftflag == 1 || spinrightflag == 1)
+    if( spinl == 1 || spinr == 1)
     {
       car.turnmax=10;
       car.turnmin=-10;
@@ -219,11 +216,11 @@ float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinright
     spinonce = 0;
     turnspeed = 0;
   }
-  if (turnleftflag == 1 || spinleftflag == 1)
+  if (turnl == 1 || spinl == 1)
   {
     car.turnout += rotationratio;
   }
-  else if (turnrightflag == 1 || spinrightflag == 1)
+  else if (turnr == 1 || spinr == 1)
   {
     car.turnout -= rotationratio;
   }
@@ -232,16 +229,15 @@ float turnspin(int turnleftflag,int turnrightflag,int spinleftflag,int spinright
   if (car.turnout > car.turnmax) car.turnout = car.turnmax;
   if (car.turnout < car.turnmin) car.turnout = car.turnmin;
 
-  turnout_put = -car.turnout * kpturn - Gyroz * kdturn;
+  turnout_put = -car.turnout * kp_turn - Gyro_z * kd_turn;
   return turnout_put;
 }
 
-void pwma(double speedoutput,float rotationoutput,float angle,float angle6,int turnleftflag,int turnrightflag,int spinleftflag,int spinrightflag,
-  int f,int b,float accelz)
+void pwma(double speedoutput)
 {
 
-  car.pwm1 = -car.angleoutput - speedoutput - rotationoutput;
-  car.pwm2 = -car.angleoutput - speedoutput + rotationoutput;
+  car.pwm1 = -car.angleoutput - speedoutput - turnoutput;
+  car.pwm2 = -car.angleoutput - speedoutput + turnoutput;
 
   if (car.pwm1 > 255)  car.pwm1 = 255;
   if (car.pwm1 < -255) car.pwm1 = -255;
@@ -254,7 +250,7 @@ void pwma(double speedoutput,float rotationoutput,float angle,float angle6,int t
     car.pwm2 = 0;
   }
   
-  if (angle6 > 10 || angle6 < -10 &turnleftflag == 0 & turnrightflag == 0 & spinleftflag == 0 & spinrightflag == 0 && f == 0 && b == 0)
+  if (angle6 > 10 || angle6 < -10 & turnl == 0 & turnr == 0 & spinl == 0 & spinr == 0 && front == 0 && back == 0)
   {
     if(car.stopl + car.stopr > 1500 || car.stopl + car.stopr < -3500)
     {
@@ -372,19 +368,19 @@ void inter()
   if (turncount > 1)
   {
     // Rotation function
-    turnoutput = turnspin(turnl,turnr,spinl,spinr,kp_turn,kd_turn,Gyro_z);                                    
+    turnoutput = turnspin();                                    
     turncount = 0;
   }
   speedcc++;
   // 50ms into speed loop control
   if (speedcc >= 10)
   {
-    Outputs = speedpiout(kp_speed,ki_speed,kd_speed,front,back,setp0);
+    Outputs = speedpiout(front,back);
     speedcc = 0;
   }
   car.posture++;
   // Total PWM output of trolley
-  pwma(Outputs,turnoutput,angle,angle6, turnl,turnr,spinl,spinr,front,back,accelz);
+  pwma(Outputs);
 
   if (car.pwm1 >= 0) {
     digitalWrite(IN2M, 0);
@@ -583,17 +579,8 @@ void Angletest()
 
   angleAx = atan2(ax, az) * 180 / PI; // Calculate the angle with the x axis
   Gyro_y = -gy / 131.00; // Calculate angular velocity
-  Yijielvbo(angleAx, Gyro_y); // First order filter
-
-
+  angle6 = K1 * angleAx + (1 - K1) * (angle6 + Gyro_y * dt);
 }
-
-//////////////////////////yijielvbo////////////////////
-void Yijielvbo(float angle_m, float gyro_m)
-{
-  angle6 = K1 * angle_m + (1 - K1) * (angle6 + gyro_m * dt);
-}
-
 
 
 //////////// Kalman filter calculation angle /////////////////////////
@@ -604,21 +591,21 @@ void Kalman_Filter(double angle_m, double gyro_m)
 {
   angle += (gyro_m - q_bias) * dt;
   angle_err = angle_m - angle;
-  Pdot[0] = Q_angle - P[0][1] - P[1][0];
+  Pdot[0] = qAngle - P[0][1] - P[1][0];
   Pdot[1] = - P[1][1];
   Pdot[2] = - P[1][1];
-  Pdot[3] = Q_gyro;
+  Pdot[3] = qGyro;
   P[0][0] += Pdot[0] * dt;
   P[0][1] += Pdot[1] * dt;
   P[1][0] += Pdot[2] * dt;
   P[1][1] += Pdot[3] * dt;
-  PCt_0 = C_0 * P[0][0];
-  PCt_1 = C_0 * P[1][0];
-  E = R_angle + C_0 * PCt_0;
+  PCt_0 = c0 * P[0][0];
+  PCt_1 = c0 * P[1][0];
+  E = rAngle + c0 * PCt_0;
   K_0 = PCt_0 / E;
   K_1 = PCt_1 / E;
   t_0 = PCt_0;
-  t_1 = C_0 * P[0][1];
+  t_1 = c0 * P[0][1];
   P[0][0] -= K_0 * t_0;
   P[0][1] -= K_0 * t_1;
   P[1][0] -= K_1 * t_0;
