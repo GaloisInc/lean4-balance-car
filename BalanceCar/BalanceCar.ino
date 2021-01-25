@@ -35,6 +35,12 @@ int16_t axis[6]; // {ax, ay, az, gx, gy, gz}
 #define PinA_right 4 //Interrupt 1
 
 
+// The volatile long types are used to ensure that the 
+// external interrupt pulse count value is used in other 
+// functions to ensure that the value is valid
+volatile long count_left = 0;
+volatile long count_right = 0;
+
 //////////////////////////////////////////////
 //////////// Interrupt timing ////////////////
 //////////////////////////////////////////////
@@ -50,9 +56,15 @@ void inter()
   sei();
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&axis[0], &axis[1], &axis[2], &axis[3], &axis[4], &axis[5]);
-  if (Serial.availableForWrite() >= (sizeof(axis)))
+  if (Serial.availableForWrite() >= (sizeof('P') + sizeof('D') + sizeof('X') + (2 * sizeof(long)) + sizeof(axis)))
   {
-    Serial.write('i');
+    Serial.write('P');
+    Serial.write('D');
+    Serial.write('X');
+    Serial.write((byte*)&count_left, sizeof(count_left));
+    count_left = 0;
+    Serial.write((byte*)&count_right, sizeof(count_right));
+    count_right = 0;
     Serial.write((byte*)&axis[0], sizeof(axis));
   }
 }
@@ -152,13 +164,13 @@ void serial_rx()
 ////////////////////Pulse interrupt calculation////////////////////////////
 
 void Code_left() {
-  Serial.write('l');
+  count_left++;
 } // Counting on the left speed code plate
 
 
 
 void Code_right() {
-  Serial.write('r');
+  count_right++;
 } // Right speed code plate count
 
 

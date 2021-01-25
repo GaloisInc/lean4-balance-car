@@ -112,8 +112,8 @@ structure KalmanFilter :=
 structure BalanceCar where
   ctrl : Controller
   filter : KalmanFilter
-  countLeft  : Nat
-  countRight : Nat
+  countLeft  : Int
+  countRight : Int
   pulseLeft  : Int
   pulseRight : Int
   stopLeft : Int
@@ -336,13 +336,6 @@ def PWMA : UInt32 := 9
 def PWMB : UInt32 := 10
 
 
-def incLeft (car : BalanceCar) : IO BalanceCar :=
-  {car with countLeft := car.countLeft + 1}
-
-def incRight (car : BalanceCar) : IO BalanceCar :=
-  {car with countRight := car.countRight + 1}
-
-
 def countPulse (car : BalanceCar) : BalanceCar := do
   let mut pulseLeft : Int := car.countLeft
   let mut pulseRight : Int := car.countRight
@@ -421,54 +414,54 @@ constant initializeSerialPort (portPath : @& String) (baudRate : UInt16) : IO Un
 constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
 @[extern "lean_analog_pin_write"]
 constant analogPinWrite  (pin : UInt8) (value : Float) : IO Unit
-@[extern "lean_rx_char_as_uint32"] 
-constant rxCharAsUInt32 : IO UInt32
 @[extern "lean_rx_int16_as_int"] 
 constant rxInt16AsInt : IO Int
+@[extern "lean_rx_long_as_int"] 
+constant rxLongAsInt : IO Int
+@[extern "lean_wait_for_header"] 
+constant waitForHeader : IO Unit
 
-def rxChar : IO Char := do
-  let n ← rxCharAsUInt32
-  if h : isValidChar n
-  then pure ⟨n, h⟩
-  else do
-    IO.eprintln "WARNING: could not interpret nat is char."
-    pure ' '
+-- @[extern "lean_rx_char_as_uint32"] 
+-- constant rxCharAsUInt32 : IO UInt32
+-- def rxChar : IO Char := do
+--   let n ← rxCharAsUInt32
+--   if h : isValidChar n
+--   then pure ⟨n, h⟩
+--   else do
+--     IO.eprintln "WARNING: could not interpret nat is char."
+--     pure ' '
 
 
 unsafe 
 def controlLoop (car : BalanceCar) : IO Unit := do
-  match (← rxChar) with
-  -- control interrupt
-  | 'i' => do
-    let ax ← rxInt16AsInt
-    let ay ← rxInt16AsInt
-    let az ← rxInt16AsInt
-    let gx ← rxInt16AsInt
-    let gy ← rxInt16AsInt
-    let gz ← rxInt16AsInt
-    let car := car.update ax ay az gx gy gz
-    if car.pwm1 >= 0 then do
-      digitalPinWrite pin2 false
-      digitalPinWrite pin1 true
-      analogPinWrite pinPWMA car.pwm1
-    else do
-      digitalPinWrite pin2 true
-      digitalPinWrite pin1 false
-      analogPinWrite pinPWMA (-car.pwm1)
-    if car.pwm2 >= 0 then do
-      digitalPinWrite pin4 false
-      digitalPinWrite pin3 true
-      analogPinWrite pinPWMB car.pwm2
-    else do
-      digitalPinWrite pin4 true
-      digitalPinWrite pin3 false
-      analogPinWrite pinPWMB (-car.pwm2)
-    controlLoop car
-  -- left/right counter interrupt
-  | 'l' => controlLoop {car with countLeft := car.countLeft + 1}
-  | 'r' => controlLoop {car with countLeft := car.countRight + 1}
-  | _ => controlLoop car
-  -- TODO support manual control of car (commandCar) in addition to balancing
+  waitForHeader
+  let l ← rxLongAsInt
+  let r ← rxLongAsInt
+  let ax ← rxInt16AsInt
+  let ay ← rxInt16AsInt
+  let az ← rxInt16AsInt
+  let gx ← rxInt16AsInt
+  let gy ← rxInt16AsInt
+  let gz ← rxInt16AsInt
+  let mut car := {car with countLeft := l, countRight := r}
+  car := car.update ax ay az gx gy gz
+  if car.pwm1 >= 0.0 then do
+    digitalPinWrite pin2 false
+    digitalPinWrite pin1 true
+    analogPinWrite pinPWMA car.pwm1
+  else do
+    digitalPinWrite pin2 true
+    digitalPinWrite pin1 false
+    analogPinWrite pinPWMA (-car.pwm1)
+  if car.pwm2 >= 0.0 then do
+    digitalPinWrite pin4 false
+    digitalPinWrite pin3 true
+    analogPinWrite pinPWMB car.pwm2
+  else do
+    digitalPinWrite pin4 true
+    digitalPinWrite pin3 false
+    analogPinWrite pinPWMB (-car.pwm2)
+  controlLoop car
 
 
 private def printSupportedBaudRates : IO Unit :=

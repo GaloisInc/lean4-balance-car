@@ -161,3 +161,59 @@ extern "C" lean_obj_res lean_rx_int16_as_int(lean_object /* w */) {
   return lean_io_result_mk_ok(lean_int_to_int(val));
 }
 
+extern "C" lean_obj_res lean_rx_long_as_int(lean_object /* w */) {
+  LOG("entering lean_rx_long_as_int\n");
+  CHECK_SERIAL_PORT();
+  int num_bytes = 4;
+  int res;
+  unsigned char *ptr = buffer;
+  do {
+    res = read(serial_port, ptr, num_bytes);
+    if (res <= 0) {
+      fprintf(stderr, "ERROR: lean_rx_long_as_int read failure, got %d", res);
+      exit(1);
+    } else if (res <= num_bytes) {
+      num_bytes -= res;
+      ptr += res;
+    } else {
+      fprintf(stderr, "ERROR: lean_rx_long_as_int read %d but expected %d", res, num_bytes);
+      exit(1);
+    }
+  } while (num_bytes > 0);
+
+  long val = (long)buffer[3] << 24 | (long)buffer[2] << 16 | (long)buffer[1] << 8 | buffer[0]; // Not positive on the endianness here...
+  LOG("exiting lean_rx_long_as_int\n");
+  return lean_io_result_mk_ok(lean_int_to_int(val));
+}
+
+// loop until bytes 'P' 'D' 'X' come over the serial port
+extern "C" lean_obj_res lean_wait_for_header(lean_object /* w */) {
+  LOG("entering lean_wait_for_header\n");
+  CHECK_SERIAL_PORT();
+  int res;
+  unsigned char actual, expected;
+  expected = 'P';
+  while (1) {
+    res = read(serial_port, &actual, 1);
+    if (res <= 0) {
+      fprintf(stderr, "ERROR: lean_wait_for_header read failure, got %d", res);
+      exit(1);
+    } else if (res == 1) {
+      if (actual == expected) {
+        switch (expected) {
+          case 'P': expected = 'D'; break;
+          case 'D': expected = 'X'; break;
+          case 'X': return lean_io_result_mk_ok(lean_box(0));
+          default: 
+            fprintf(stderr, "ERROR: lean_wait_for_header reached impossible state waiting for header");
+            exit(1);
+        }
+      } else {
+        expected = 'P';
+      }
+    } else {
+      fprintf(stderr, "ERROR: lean_wait_for_header read %d but expected 1 byte", res);
+      exit(1);
+    }
+  }
+}
