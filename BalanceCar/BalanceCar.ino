@@ -123,40 +123,25 @@ void setup() {
 
 }
 
-int rx_tag, rx_pin, rx_val;
+byte mode1, mode2, val1, val2;
 
 // Communicate over serial to receive commands
 void serial_rx()
 {
   while (Serial.available()) // Waiting for Bluetooth data
   {
-    rx_tag = Serial.read();
-    rx_pin = Serial.read();
-    rx_val = Serial.read();
-    switch (rx_tag)  // Read pin number, then read value
+    if (Serial.read() == 'P' && Serial.read() == 'D' && Serial.read() == 'X')
     {
-      case 'd': // digital write
-      {
-        switch(rx_pin)
-        {
-          case 1: digitalWrite(IN1M, rx_val == 0 ? LOW : HIGH); break;
-          case 2: digitalWrite(IN2M, rx_val == 0 ? LOW : HIGH); break;
-          case 3: digitalWrite(IN3M, rx_val == 0 ? LOW : HIGH); break;
-          case 4: digitalWrite(IN4M, rx_val == 0 ? LOW : HIGH); break;
-          default: break; // this shouldn't happen...
-        }
-        break;
-      }
-      case 'a': // analogue write
-      {
-        switch(rx_pin)
-        {
-          case 5: analogWrite(PWMA, rx_val); break;
-          case 6: analogWrite(PWMB, rx_val); break;
-          default: break; // this shouldn't happen...
-        }
-      }
-      default: break; // shouldn't happen...
+      mode1 = Serial.read();
+      mode2 = Serial.read();
+      val1 = Serial.read();
+      val2 = Serial.read();
+      digitalWrite(IN2M, mode1 ? LOW : HIGH);
+      digitalWrite(IN1M, mode1 ? HIGH : LOW);
+      analogWrite(PWMA, val1);
+      digitalWrite(IN4M, mode1 ? LOW : HIGH);
+      digitalWrite(IN3M, mode1 ? HIGH : LOW );
+      analogWrite(PWMB, val2);
     }
   }
 }

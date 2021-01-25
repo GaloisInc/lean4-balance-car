@@ -120,6 +120,23 @@ extern "C" lean_object * lean_analog_pin_write(uint8_t pin, double value, lean_o
   return lean_io_result_mk_ok(lean_box(0));
 }
 
+extern "C" lean_object * lean_drive_car(bool mode1, bool mode2, double val1, double val2, lean_object /* w */) {
+  LOG("entering lean_drive_car\n");
+  CHECK_SERIAL_PORT();
+  value1 = fmin(fabs(value1), 255);
+  value2 = fmin(fabs(value2), 255);
+  buffer[0] = 'P';
+  buffer[1] = 'D';
+  buffer[2] = 'X';
+  buffer[3] = mode1 ? 0b11111111 : 0b00000000;
+  buffer[4] = mode2 ? 0b11111111 : 0b00000000;
+  buffer[5] = (uint8_t) val1;
+  buffer[6] = (uint8_t) val2;
+  write(serial_port, buffer, 7);
+  LOG("exiting lean_analog_pin_write\n");
+  return lean_io_result_mk_ok(lean_box(0));
+}
+
 extern "C" lean_object * lean_rx_char_as_uint32(lean_object /* w */) {
   LOG("entering lean_rx_char_as_uint32\n");
   CHECK_SERIAL_PORT();

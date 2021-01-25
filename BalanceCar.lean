@@ -410,10 +410,12 @@ def commandCar (car : BalanceCar) : Cmd → BalanceCar
 
 @[extern "lean_initialize_serial_port"]
 constant initializeSerialPort (portPath : @& String) (baudRate : UInt16) : IO Unit
-@[extern "lean_digital_pin_write"] 
-constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
-@[extern "lean_analog_pin_write"]
-constant analogPinWrite  (pin : UInt8) (value : Float) : IO Unit
+-- @[extern "lean_digital_pin_write"] 
+-- constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
+-- @[extern "lean_analog_pin_write"]
+-- constant analogPinWrite  (mode1 mode2 : UInt8) (value1 value2 : Float) : IO Unit
+@[extern "lean_drive_car"]
+constant driveCar (mode1 mode2 : Bool) (value1 value2 : Float) : IO Unit
 @[extern "lean_rx_int16_as_int"] 
 constant rxInt16AsInt : IO Int
 @[extern "lean_rx_long_as_int"] 
@@ -445,22 +447,13 @@ def controlLoop (car : BalanceCar) : IO Unit := do
   let gz ← rxInt16AsInt
   let mut car := {car with countLeft := l, countRight := r}
   car := car.update ax ay az gx gy gz
-  if car.pwm1 >= 0.0 then do
-    digitalPinWrite pin2 false
-    digitalPinWrite pin1 true
-    analogPinWrite pinPWMA car.pwm1
-  else do
-    digitalPinWrite pin2 true
-    digitalPinWrite pin1 false
-    analogPinWrite pinPWMA (-car.pwm1)
-  if car.pwm2 >= 0.0 then do
-    digitalPinWrite pin4 false
-    digitalPinWrite pin3 true
-    analogPinWrite pinPWMB car.pwm2
-  else do
-    digitalPinWrite pin4 true
-    digitalPinWrite pin3 false
-    analogPinWrite pinPWMB (-car.pwm2)
+  let (mode1, pwm1) := if car.pwm1 >= 0.0 
+                       then (true, car.pwm1)
+                       else (false, (-car.pwm1))
+  let (mode2, pwm2) := if car.pwm2 >= 0.0
+                       then (true, car.pwm2)
+                       else (false, (-car.pwm2))
+  driveCar mode1 mode2 pwm1 pwm2
   controlLoop car
 
 
