@@ -123,7 +123,8 @@ structure BalanceCar where
   pwm2 : Float
   speedFilter : Float
   positions : Float
-  usePositions : Bool
+  resetPosition : Bool
+  turnSpinDelay : Nat
   turnMax : Int
   turnMin : Int
   turnOut : Float
@@ -170,16 +171,16 @@ def kFilter (k : KalmanFilter) (angleM gyroM : Float) : KalmanFilter := do
   p00 := p00 - K_0 * PCt_0
   p01 := p01 - K_0 * t_1
   p10 := p10 - K_1 * PCt_0
-  p11 := p11 - K_1 * t_1;
+  p11 := p11 - K_1 * t_1
   angle := angle + K_0 * angleErr; -- optimal angle
-  let qBias := k.qBias + K_1 * angleErr;
-  let angleDot : Float := gyroM - qBias; -- optimal angular velocity
+  let qBias := k.qBias + K_1 * angleErr
   { k with
     angle := angle,
     angleErr := angleErr,
     qBias := qBias,
     p := ⟨p00, p01, p10, p11⟩,
-    pDot := ⟨pDot0, pDot1, pDot2, pDot3⟩
+    pDot := ⟨pDot0, pDot1, pDot2, pDot3⟩,
+    angleDot := gyroM - qBias
   }
 
 def angleTest (k : KalmanFilter) (ax ay az gx gy gz : Int) : KalmanFilter :=
@@ -209,6 +210,9 @@ namespace BalanceCar
 
 -- 50ms speed loop control delay
 def speedPIDelayCount : Nat := 10
+-- every 10ms, enter rotation control
+def turnSpinDelayCount : Nat := 2
+
 
 def initial : BalanceCar := {
   ctrl := Controller.initial,
@@ -223,10 +227,11 @@ def initial : BalanceCar := {
   pwm2 := 0,
   speedFilter := 0,
   positions := 0,
+  turnSpinDelay := turnSpinDelayCount,
   turnMax := 0,
   turnMin := 0,
   turnOut := 0,
-  usePositions := false,
+  resetPosition := false,
   speedPI := 0,
   turnSpin := 0,
   filter := KalmanFilter.initial,
@@ -240,14 +245,13 @@ def updateSpeedPI (car : BalanceCar) : BalanceCar := do
   let speedFilter : Float := car.speedFilter * 0.7 + speeds * 0.3
   let mut positions : Float := car.positions + speedFilter + car.ctrl.forward + car.ctrl.reverse
   positions := Float.constrain positions (-3550) 3550
-  positions := if car.usePositions then 0 else positions
+  positions := if car.resetPosition then 0 else positions
   { car with 
     pulseRight := 0,
     pulseLeft := 0,
     speedFilter := speedFilter,
     positions := positions,
-    speedPI := kiSpeed * (p0 - positions) + kpSpeed * (p0 - speedFilter),
-    speedPIDelay := speedPIDelayCount
+    speedPI := kiSpeed * (p0 - positions) + kpSpeed * (p0 - speedFilter)
   }
 
 
@@ -268,7 +272,7 @@ def updateTurnSpin (car : BalanceCar) : BalanceCar := do
     if (car.ctrl.spinLeft || car.ctrl.spinRight) then do
      turnMax := 10
      turnMin := -10
-    rotationRatio := Float.constrain (5 / turnSpeed) 0.5 5
+    rotationRatio := Float.constrain (5.0 / turnSpeed) 0.5 5.0
   else do
     rotationRatio := 0.5
   if (car.ctrl.turnLeft || car.ctrl.spinLeft) then do
@@ -282,20 +286,20 @@ def updateTurnSpin (car : BalanceCar) : BalanceCar := do
     turnOut := turnOut,
     turnMin := turnMin,
     turnMax := turnMax,
-    turnSpin := (0 - turnOut) * kpTurn - car.filter.gyro.z * kdTurn
+    turnSpin := (- turnOut) * kpTurn - car.filter.gyro.z * kdTurn
   }
 
 
 -- speedoutput and rotationoutput are values on the BalanceCar (speedPI and turnSpin)
 def pwma (car : BalanceCar) : BalanceCar := do
-  let mut usePositions := car.usePositions
+  let mut resetPosition := car.resetPosition
   let mut stopLeft := car.stopLeft
   let mut stopRight := car.stopRight
   -- Left motor PWM output value
   let mut pwm1 := Float.constrain ((- car.angleOut) - car.speedPI - car.turnSpin) (-255) 255
   -- Right motor PWM output value
   let mut pwm2 := Float.constrain ((- car.angleOut) - car.speedPI + car.turnSpin) (-255) 255
-  if car.filter.angle > 30 || car.filter.angle < -30 then do
+  if car.filter.angle > 30.0 || car.filter.angle < (Float.neg 30.0) then do
     -- If the angle is too large, stop the motor
     pwm1 := 0
     pwm2 := 0
@@ -309,13 +313,13 @@ def pwma (car : BalanceCar) : BalanceCar := do
     if car.stopLeft + car.stopRight > 1500 || car.stopLeft + car.stopRight < -3500 then do
       pwm1 := 0
       pwm2 := 0
-      usePositions := true
+      resetPosition := true
     else do
       stopLeft := 0
       stopRight := 0
-      usePositions := false
+      resetPosition := false
   { car with 
-    usePositions := usePositions,
+    resetPosition := resetPosition,
     stopLeft := stopLeft,
     stopRight := stopRight,
     pwm1 := pwm1,
@@ -374,12 +378,15 @@ def update (car : BalanceCar) (ax ay az gx gy gz : Int) : BalanceCar := do
   let mut car : BalanceCar := car
   car := countPulse car
   car := {car with filter := car.filter.angleTest ax ay az gx gy gz}
-  car := {car with angleOut := kp * (car.filter.angle + angle0) + kd * car.filter.gyro.x}
-  car := car.updateTurnSpin
+  car := {car with angleOut := kp * (car.filter.angle + angle0) + kd * car.filter.gyro.x}  
+  car := {car with turnSpinDelay := car.turnSpinDelay - 1}
+  if car.turnSpinDelay == 0 then do
+    car := car.updateTurnSpin
+    car := {car with turnSpinDelay := turnSpinDelayCount}
+  car := {car with speedPIDelay := car.speedPIDelay - 1}
   if car.speedPIDelay == 0 then do
     car := car.updateSpeedPI
-  else do
-    car := {car with speedPIDelay := car.speedPIDelay - 1}
+    car := {car with speedPIDelay := speedPIDelayCount}
   car := car.pwma
   pure car
 

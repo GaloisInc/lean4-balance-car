@@ -24,7 +24,6 @@
 struct BalanceCar {
   int pulseright;
   int pulseleft;
-  int posture;
   int stopl;
   int stopr;
   double angleoutput;
@@ -156,7 +155,7 @@ int jishi = 0; // even if
 
 
 //////////////////////BalanceCar Methods///////////////////////
-double speedpiout(int f,int b)
+double speedpiout()
 {
   float speeds = (car.pulseleft + car.pulseright) * 1.0;
   car.pulseright = 0;
@@ -165,8 +164,8 @@ double speedpiout(int f,int b)
   float speeds_filter = car.speeds_filterold + speeds * 0.3;
   car.speeds_filterold = speeds_filter;
   car.positions += speeds_filter;
-  car.positions += f;
-  car.positions += b;
+  car.positions += front;
+  car.positions += back;
   car.positions = constrain(car.positions, -3550,3550);
   double output = ki_speed * (0.0 - car.positions) + kp_speed * (0.0 - speeds_filter);
   if(car.flag1 == 1)
@@ -272,7 +271,7 @@ void pwma(double speedoutput)
 
 
 //////////////////////Pulse calculation///////////////////////
-void countpluse()
+void countpulse()
 {
 
   lz = count_left;
@@ -355,7 +354,7 @@ void inter()
   // be opened here. But in the timed interrupt, the code executed cannot exceed
   // 5ms, otherwise it will destroy the overall interrupt.
   sei();
-  countpluse(); // Pulse superposition subroutine
+  countpulse(); // Pulse superposition subroutine
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   
@@ -375,10 +374,9 @@ void inter()
   // 50ms into speed loop control
   if (speedcc >= 10)
   {
-    Outputs = speedpiout(front,back);
+    Outputs = speedpiout();
     speedcc = 0;
   }
-  car.posture++;
   // Total PWM output of trolley
   pwma(Outputs);
 
