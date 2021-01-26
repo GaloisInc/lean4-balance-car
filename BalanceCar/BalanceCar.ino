@@ -40,6 +40,7 @@ int16_t axis[6]; // {ax, ay, az, gx, gy, gz}
 // functions to ensure that the value is valid
 volatile long count_left = 0;
 volatile long count_right = 0;
+volatile long rx_count = 0;
 
 //////////////////////////////////////////////
 //////////// Interrupt timing ////////////////
@@ -56,11 +57,12 @@ void inter()
   sei();
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&axis[0], &axis[1], &axis[2], &axis[3], &axis[4], &axis[5]);
-  if (Serial.availableForWrite() >= (sizeof('P') + sizeof('D') + sizeof('X') + (2 * sizeof(long)) + sizeof(axis)))
+  if (Serial.availableForWrite() >= (sizeof('P') + sizeof('D') + sizeof('X') + (3 * sizeof(long)) + sizeof(axis)))
   {
     Serial.write('P');
     Serial.write('D');
     Serial.write('X');
+    Serial.write((byte*)&rx_count, sizeof(rx_count));
     Serial.write((byte*)&count_left, sizeof(count_left));
     count_left = 0;
     Serial.write((byte*)&count_right, sizeof(count_right));
@@ -139,9 +141,10 @@ void serial_rx()
       digitalWrite(IN2M, mode1 ? LOW : HIGH);
       digitalWrite(IN1M, mode1 ? HIGH : LOW);
       analogWrite(PWMA, val1);
-      digitalWrite(IN4M, mode1 ? LOW : HIGH);
-      digitalWrite(IN3M, mode1 ? HIGH : LOW );
+      digitalWrite(IN4M, mode2 ? LOW : HIGH);
+      digitalWrite(IN3M, mode2 ? HIGH : LOW );
       analogWrite(PWMB, val2);
+      rx_count++;
     }
   }
 }
