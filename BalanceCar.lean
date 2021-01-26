@@ -327,15 +327,6 @@ def pwma (car : BalanceCar) : BalanceCar := do
   }
 
 
--- IN1M,IN2M,IN3M,IN4M,PWMA,PWMB
-def IN1M : UInt32 := 7
-def IN2M : UInt32 := 6
-def IN3M : UInt32 := 13
-def IN4M : UInt32 := 12
-def PWMA : UInt32 := 9
-def PWMB : UInt32 := 10
-
-
 def countPulse (car : BalanceCar) : BalanceCar := do
   let mut pulseLeft : Int := car.countLeft
   let mut pulseRight : Int := car.countRight

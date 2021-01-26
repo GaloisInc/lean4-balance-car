@@ -3,6 +3,7 @@
 // C library headers
 #include <stdio.h>
 #include <string.h>
+#include <cmath>
 
 // Linux headers
 #include <fcntl.h> // Contains file controls like O_RDWR
@@ -96,35 +97,12 @@ extern "C" lean_object * lean_initialize_serial_port(b_lean_obj_arg port_path, s
   return lean_io_result_mk_ok(lean_box(0));
 }
 
-extern "C" lean_object * lean_digital_pin_write(uint8_t pin, bool value, lean_object /* w */) {
-  LOG("entering lean_digital_pin_write\n");
-  CHECK_SERIAL_PORT();
-  buffer[0] = 'd';
-  buffer[1] = pin;
-  buffer[2] = value ? 0b11111111 : 0b00000000;
-  write(serial_port, buffer, 3);
-  LOG("exiting lean_digital_pin_write\n");
-  return lean_io_result_mk_ok(lean_box(0));
-}
-
-extern "C" lean_object * lean_analog_pin_write(uint8_t pin, double value, lean_object /* w */) {
-  LOG("entering lean_analog_pin_write\n");
-  CHECK_SERIAL_PORT();
-  value = value < 0 ? -value : value;
-  value = value > 255 ? 255 : value;
-  buffer[0] = 'a';
-  buffer[1] = pin;
-  buffer[2] = (uint8_t) value;
-  write(serial_port, buffer, 3);
-  LOG("exiting lean_analog_pin_write\n");
-  return lean_io_result_mk_ok(lean_box(0));
-}
 
 extern "C" lean_object * lean_drive_car(bool mode1, bool mode2, double val1, double val2, lean_object /* w */) {
   LOG("entering lean_drive_car\n");
   CHECK_SERIAL_PORT();
-  value1 = fmin(fabs(value1), 255);
-  value2 = fmin(fabs(value2), 255);
+  val1 = fmin(fabs(val1), 255);
+  val2 = fmin(fabs(val2), 255);
   buffer[0] = 'P';
   buffer[1] = 'D';
   buffer[2] = 'X';
@@ -135,22 +113,6 @@ extern "C" lean_object * lean_drive_car(bool mode1, bool mode2, double val1, dou
   write(serial_port, buffer, 7);
   LOG("exiting lean_analog_pin_write\n");
   return lean_io_result_mk_ok(lean_box(0));
-}
-
-extern "C" lean_object * lean_rx_char_as_uint32(lean_object /* w */) {
-  LOG("entering lean_rx_char_as_uint32\n");
-  CHECK_SERIAL_PORT();
-  int num_bytes = read(serial_port, buffer, 1);
-  if (num_bytes == 1) {
-      LOG("exiting lean_rx_char_as_uint32\n");
-      return lean_io_result_mk_ok(lean_box((uint32_t) buffer[0]));
-  } else {
-      fprintf(
-        stderr,
-        "ERROR: failed to read a single byte in lean_rx_char_as_uint32, instead got %d", 
-        num_bytes);
-      exit(1);
-  }
 }
 
 extern "C" lean_obj_res lean_rx_int16_as_int(lean_object /* w */) {
