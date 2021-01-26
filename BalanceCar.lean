@@ -447,6 +447,50 @@ def controlLoop (car : BalanceCar) : IO Unit := do
   driveCar mode1 mode2 pwm1 pwm2
   controlLoop car
 
+structure Measurements where
+  ax : Int
+  ay : Int
+  az : Int
+  gx : Int
+  gy : Int
+  gz : Int
+  countL : Int
+  countR : Int
+
+def checkUpdate (inputs : List Measurements) : (Float × Float) := do
+  let mut car := BalanceCar.initial
+  for ins in inputs do
+    let ⟨ax, ay, az, gx, gy, gz, l, r⟩ := ins
+    car := {BalanceCar.initial with 
+            countLeft := l, 
+            countRight := r}
+    car := car.update ax ay az gx gy gz
+  (car.pwm1, car.pwm2)
+
+#eval checkUpdate ⟨0, 0, 0, 0, 0, 0, 0, 0⟩
+-- car.pwm1 = 0.629091
+-- car.pwm2 = 0.629091
+
+-- #eval checkUpdate 100 100 100 100 100 100 0 0
+-- -- car.pwm1 = -255.000000
+-- -- car.pwm2 = -255.000000
+
+-- #eval checkUpdate 256 256 256 256 256 256 50 50
+-- -- car.pwm1 = -255.000000
+-- -- car.pwm2 = -255.000000
+
+-- #eval checkUpdate 90 90 90 256 256 256 50 50
+-- -- car.pwm1 = 0.0
+-- -- car.pwm2 = 0.0
+
+-- #eval checkUpdate (-100) (-100) (-100) (-100) (-100) (-100) 25 35
+-- -- car.pwm1 = 1.695769
+-- -- car.pwm2 = 2.275769
+
+-- #eval checkUpdate 5 10 15 20 25 30 25 35
+-- -- car.pwm1 = -195.505330
+-- -- car.pwm2 = -195.505330
+
 
 private def printSupportedBaudRates : IO Unit :=
   IO.println   "  Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
