@@ -123,6 +123,13 @@ void setup() {
   MsTimer2::set(5, inter);
   MsTimer2::start();
 
+  // In the main function, cycle detection and superimposition
+  // of pulses to determine the speed of the trolley. Use level
+  // change to enter the pulse superposition. Increase the number
+  // of pulses of the motor to ensure the accuracy of the trolley.
+  attachInterrupt(0, Code_left, CHANGE);
+  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
+
 }
 
 byte mode1, mode2, val1, val2;
@@ -166,14 +173,6 @@ void Code_right() {
 
 // ===       Main loop program body       ===
 void loop() {
-
-  // In the main function, cycle detection and superimposition
-  // of pulses to determine the speed of the trolley. Use level
-  // change to enter the pulse superposition. Increase the number
-  // of pulses of the motor to ensure the accuracy of the trolley.
-  attachInterrupt(0, Code_left, CHANGE);
-  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
-
   // receive commands over serial
   serial_rx();
 }

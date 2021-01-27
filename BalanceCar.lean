@@ -11,7 +11,7 @@ def constrain (n low high : Float) : Float :=
   else if n > high then high
   else n
 
-def pi : Float := 3.1415926535897932384626433832795
+def pi : Float := 3.141592653589793238462643
 
 end Float
 
@@ -76,7 +76,7 @@ def kp : Float := 38.0
 def kd : Float := 0.58
 def kpTurn : Float := 28.0
 def kdTurn : Float := 0.29
-def kpSpeed : Float := 28.0
+def kpSpeed : Float := 3.1
 def kiSpeed : Float := 0.05
 def kdSpeed : Float := 0.0
 
@@ -90,26 +90,12 @@ structure Controller where
   spinLeft  : Bool -- Rotate left sign
   spinRight : Bool -- Right rotation sign
 
-structure Gyro := (x y z : Float)
-
-structure FourByOne (α : Type) := (val0 val1 val2 val3 : α)
-structure TwoByTwo (α : Type) := (val00 val01 val10 val11 : α)
-
-
-structure KalmanFilter :=
-  (gyro : Gyro)
-  (accelz angle angle6 angleErr qBias angleDot : Float)
-  (p : TwoByTwo Float) 
-  -- ^ Posteriori estimate covariance matrix for the Kalman filter,
-  --   represented as a pair of matrix rows (where each row is also a pair)
-  (pDot : FourByOne Float)
 
 -- See also https://github.com/TKJElectronics/KalmanFilter/blob/master/Kalman.cpp 
 -- for a... cleaner setup than the one we're mirroring at the moment
 
 structure BalanceCar where
   ctrl : Controller
-  filter : KalmanFilter
   countLeft  : Int
   countRight : Int
   pulseLeft  : Int
@@ -129,74 +115,20 @@ structure BalanceCar where
   speedPI : Float -- calculated by `updateSpeedPI`
   turnSpin : Float -- calculated by `updateTurnSpin`
   speedPIDelay : Nat
-
-
-
-def KalmanFilter.initial : KalmanFilter := {
-  gyro := {x := 0, y := 0, z := 0},
-  accelz := 0,
-  angle := 0,
-  angle6 := 0,
-  angleErr := 0,
-  qBias := 0,
-  angleDot := 0,
-  p := ⟨1, 0, 
-        0, 1⟩,
-  pDot := ⟨0, 0, 0, 0⟩,
-}
-
-namespace KalmanFilter
-
-
--- Kalman Filter
-def kFilter (k : KalmanFilter) (angleM gyroM : Float) : KalmanFilter := do
-  let mut angle : Float := k.angle + (gyroM - k.qBias) * dt
-  let angleErr : Float := angleM - angle
-  let pDot0 : Float := qAngle - k.p.val01 - k.p.val10
-  let pDot1 : Float := - k.p.val11
-  let pDot2 : Float := - k.p.val11
-  let pDot3 : Float := qGyro
-  let mut p00 : Float := k.p.val00 + pDot0 * dt
-  let mut p01 : Float := k.p.val01 + pDot1 * dt
-  let mut p10 : Float := k.p.val10 + pDot2 * dt
-  let mut p11 : Float := k.p.val11 + pDot3 * dt
-  let PCt_0 : Float := c0 * p00
-  let PCt_1 : Float := c0 * p10
-  let E : Float := rAngle + c0 * PCt_0
-  let K_0 : Float := PCt_0 / E
-  let K_1 : Float := PCt_1 / E
-  let t_1 : Float := c0 * p01
-  p00 := p00 - K_0 * PCt_0
-  p01 := p01 - K_0 * t_1
-  p10 := p10 - K_1 * PCt_0
-  p11 := p11 - K_1 * t_1
-  angle := angle + K_0 * angleErr; -- optimal angle
-  let qBias := k.qBias + K_1 * angleErr
-  { k with
-    angle := angle,
-    angleErr := angleErr,
-    qBias := qBias,
-    p := ⟨p00, p01, p10, p11⟩,
-    pDot := ⟨pDot0, pDot1, pDot2, pDot3⟩,
-    angleDot := gyroM - qBias
-  }
-
-def angleTest (k : KalmanFilter) (ax ay az gx gy gz : Int) : KalmanFilter :=
-  let angle : Float := (Float.atan2 ay az) * 57.3
-  let gyroX : Float := ((Float.ofInt gx) - 128.1) / 131.0
-  let k : KalmanFilter := kFilter k angle gyroX
-  let gz : Int := if (gz > 32768) then gz - 65536 else gz
-  let angleAx : Float := (Float.atan2 ax az) * 180.0 / Float.pi
-  let gyroY : Float := Float.div (-gy) 131.0
-  let gyroZ : Float := Float.div (-gz) 131.0
-  { k with
-    gyro := ⟨gyroX, gyroY, gyroZ⟩,
-    accelz := Float.div az 16.4,
-    angle6 := k1 * angleAx + (1 - k1) * (k.angle6 + gyroY * dt)
-  }
-
-end KalmanFilter
-
+  gyroX : Float
+  gyroY : Float
+  gyroZ : Float
+  (angle angle6 qBias angleDot : Float)
+  p00 : Float
+  p01 : Float
+  p10 : Float
+  p11 : Float
+  -- ^ Posteriori estimate covariance matrix for the Kalman filter,
+  --   represented as a pair of matrix rows (where each row is also a pair)
+  pDot0 : Float
+  pDot1 : Float
+  pDot2 : Float
+  pDot3 : Float
 
 
 
@@ -205,6 +137,46 @@ def Controller.initial : Controller :=
 
 
 namespace BalanceCar
+
+-- Kalman Filter
+def kFilter (car : BalanceCar) (angleM gyroM : Float) : BalanceCar := do
+  let mut car := car
+  car := {car with angle := car.angle + (gyroM - car.qBias) * dt}
+  let angleErr : Float := angleM - car.angle
+  car := {car with pDot0 := qAngle - car.p01 - car.p10}
+  car := {car with pDot1 := - car.p11}
+  car := {car with pDot2 := - car.p11}
+  car := {car with pDot3 := qGyro}
+  car := {car with p00 := car.p00 + car.pDot0 * dt}
+  car := {car with p01 := car.p01 + car.pDot1 * dt}
+  car := {car with p10 := car.p10 + car.pDot2 * dt}
+  car := {car with p11 := car.p11 + car.pDot3 * dt}
+  let PCt_0 : Float := c0 * car.p00
+  let PCt_1 : Float := c0 * car.p10
+  let E : Float := rAngle + c0 * PCt_0
+  let K_0 : Float := PCt_0 / E
+  let K_1 : Float := PCt_1 / E
+  let t_1 : Float := c0 * car.p01
+  car := {car with p00 := car.p00 - K_0 * PCt_0}
+  car := {car with p01 := car.p01 - K_0 * t_1}
+  car := {car with p10 := car.p10 - K_1 * PCt_0}
+  car := {car with p11 := car.p11 - K_1 * t_1}
+  car := {car with angle := car.angle + K_0 * angleErr} -- optimal angle
+  car := {car with qBias := car.qBias + K_1 * angleErr}
+  car := {car with angleDot := gyroM - car.qBias}
+  car
+
+def angleTest (car : BalanceCar) (ax ay az gx gy gz : Int) : BalanceCar := do
+  let mut car := car
+  let angle := (Float.atan2 ay az) * 57.3
+  car := {car with gyroX := ((Float.ofInt gx) - 128.1) / 131.0}
+  car := car.kFilter angle car.gyroX
+  let gz : Int := if (gz > 32768) then gz - 65536 else gz
+  let angleAx : Float := (Float.atan2 ax az) * 180.0 / Float.pi
+  car := {car with gyroY := Float.div (-gy) 131.0}
+  car := {car with gyroZ := Float.div (-gz) 131.0}
+  car := {car with angle6 := k1 * angleAx + (1 - k1) * (car.angle6 + car.gyroY * dt)}
+  car
 
 -- 50ms speed loop control delay
 def speedPIDelayCount : Nat := 10
@@ -232,76 +204,80 @@ def initial : BalanceCar := {
   resetPosition := false,
   speedPI := 0,
   turnSpin := 0,
-  filter := KalmanFilter.initial,
-  speedPIDelay := speedPIDelayCount
+  speedPIDelay := speedPIDelayCount,
+  gyroX := 0,
+  gyroY := 0,
+  gyroZ := 0,
+  angle := 0,
+  angle6 := 0,
+  qBias := 0,
+  angleDot := 0,
+  p00 := 1,
+  p01 := 0,
+  p10 := 0,
+  p11 := 1,
+  pDot0 := 0,
+  pDot1 := 0,
+  pDot2 := 0,
+  pDot3 := 0
 }
+
 
 
 -- Update cars speed PI (Proportional Integral)
 def updateSpeedPI (car : BalanceCar) : BalanceCar := do
+  let mut car := car
   let speeds : Float := Float.ofInt (car.pulseLeft + car.pulseRight)
-  let speedFilter : Float := car.speedFilter * 0.7 + speeds * 0.3
-  let mut positions : Float := car.positions + speedFilter + car.ctrl.forward + car.ctrl.reverse
-  positions := Float.constrain positions (-3550) 3550
-  positions := if car.resetPosition then 0 else positions
-  { car with 
-    pulseRight := 0,
-    pulseLeft := 0,
-    speedFilter := speedFilter,
-    positions := positions,
-    speedPI := kiSpeed * (p0 - positions) + kpSpeed * (p0 - speedFilter)
-  }
+  car := {car with pulseLeft := 0, pulseRight := 0}
+  car := {car with speedFilter := car.speedFilter * 0.7 + speeds * 0.3}
+  car := {car with positions := car.positions + car.speedFilter + car.ctrl.forward + car.ctrl.reverse}
+  car := {car with positions := Float.constrain car.positions (-3550) 3550}
+  car := {car with speedPI := kiSpeed * (p0 - car.positions) + kpSpeed * (p0 - car.speedFilter)}
+  car := {car with positions := if car.resetPosition then 0 else car.positions}
+  car
 
 
 def updateTurnSpin (car : BalanceCar) : BalanceCar := do
+  let mut car := car
   let mut turnSpeed : Float := 0
   let mut rotationRatio : Float := 0
-  let mut turnOut := car.turnOut
-  let mut turnMin : Int := car.turnMin
-  let mut turnMax : Int := car.turnMax
   if (car.ctrl.turnLeft || car.ctrl.turnRight || car.ctrl.spinLeft || car.ctrl.spinRight) then do
     -- Judge the current speed before rotating to enhance the adaptability of the car.
     turnSpeed := Float.ofInt (car.pulseRight + car.pulseLeft)
     if (turnSpeed < 0) then do
       turnSpeed := -turnSpeed
     if (car.ctrl.turnLeft || car.ctrl.turnRight) then do
-     turnMax := 3
-     turnMin := -3
+      car := {car with turnMax := 3}
+      car := {car with turnMin := -3}
     if (car.ctrl.spinLeft || car.ctrl.spinRight) then do
-     turnMax := 10
-     turnMin := -10
+      car := {car with turnMax := 10}
+      car := {car with turnMin := -10}
     rotationRatio := Float.constrain (5.0 / turnSpeed) 0.5 5.0
   else do
     rotationRatio := 0.5
   if (car.ctrl.turnLeft || car.ctrl.spinLeft) then do
-    turnOut := turnOut + rotationRatio
+    car := {car with turnOut := car.turnOut + rotationRatio}
   else if (car.ctrl.turnRight|| car.ctrl.spinRight) then do
-    turnOut := turnOut - rotationRatio
+    car := {car with turnOut := car.turnOut - rotationRatio}
   else do
-    turnOut := 0
-  turnOut := Float.constrain turnOut turnMin turnMax
-  { car with
-    turnOut := turnOut,
-    turnMin := turnMin,
-    turnMax := turnMax,
-    turnSpin := (- turnOut) * kpTurn - car.filter.gyro.z * kdTurn
-  }
+    car := {car with turnOut := 0}
+  car := {car with turnOut := Float.constrain car.turnOut car.turnMin car.turnMax}
+  car := {car with turnSpin := (- car.turnOut) * kpTurn - car.gyroZ * kdTurn}
+  car
 
 
 -- speedoutput and rotationoutput are values on the BalanceCar (speedPI and turnSpin)
 def pwma (car : BalanceCar) : BalanceCar := do
-  let mut resetPosition := car.resetPosition
-  let mut stopLeft := car.stopLeft
-  let mut stopRight := car.stopRight
+  let mut car := car
   -- Left motor PWM output value
-  let mut pwm1 := Float.constrain ((- car.angleOut) - car.speedPI - car.turnSpin) (-255) 255
+  car := {car with pwm1 := Float.constrain ((- car.angleOut) - car.speedPI - car.turnSpin) (-255) 255}
   -- Right motor PWM output value
-  let mut pwm2 := Float.constrain ((- car.angleOut) - car.speedPI + car.turnSpin) (-255) 255
-  if car.filter.angle > 30.0 || car.filter.angle < (Float.neg 30.0) then do
+  car := {car with pwm2 := Float.constrain ((- car.angleOut) - car.speedPI + car.turnSpin) (-255) 255}
+  if car.angle > 30.0 || car.angle < (Float.neg 30.0) then do
     -- If the angle is too large, stop the motor
-    pwm1 := 0
-    pwm2 := 0
-  if car.filter.angle6 > 10 || car.filter.angle6 < -10 
+    car := {car with pwm1 := 0}
+    car := {car with pwm2 := 0}
+  if (car.angle6 > 10 || car.angle6 < -10)
      && !car.ctrl.turnLeft 
      && !car.ctrl.turnRight
      && !car.ctrl.spinLeft
@@ -309,49 +285,43 @@ def pwma (car : BalanceCar) : BalanceCar := do
      && car.ctrl.forward == 0
      && car.ctrl.reverse == 0 then
     if car.stopLeft + car.stopRight > 1500 || car.stopLeft + car.stopRight < -3500 then do
-      pwm1 := 0
-      pwm2 := 0
-      resetPosition := true
-    else do
-      stopLeft := 0
-      stopRight := 0
-      resetPosition := false
-  { car with 
-    resetPosition := resetPosition,
-    stopLeft := stopLeft,
-    stopRight := stopRight,
-    pwm1 := pwm1,
-    pwm2 := pwm2
-  }
+      car := {car with pwm1 := 0}
+      car := {car with pwm2 := 0}
+      car := {car with resetPosition := true}
+  else do
+    car := {car with stopLeft := 0}
+    car := {car with stopRight := 0}
+    car := {car with resetPosition := false}
+  car
 
 
 def countPulse (car : BalanceCar) : BalanceCar := do
-  let mut pulseLeft : Int := car.countLeft
-  let mut pulseRight : Int := car.countRight
-  if (car.pwm1 < 0) && (car.pwm2 < 0) then do
+  let mut car := car
+  let mut pulseLeft := car.countLeft
+  let mut pulseRight := car.countRight
+  car := {car with countLeft := 0,
+                   countRight := 0}
+  if (car.pwm1 < 0.0) && (car.pwm2 < 0.0) then do
     -- Judgment of the direction of movement of the trolley.
     -- When moving backwards (PWM means the motor voltage is negative), 
     -- the number of pulses is negative.
     pulseRight := -pulseRight
-    pulseLeft  := -pulseLeft
-  else if (car.pwm1 < 0) && (car.pwm2 > 0) then do
+    pulseLeft := -pulseLeft
+  else if (car.pwm1 < 0.0) && (car.pwm2 > 0.0) then do
     -- Judgment of the direction of movement of the trolley.
     -- When moving forward (PWM, that is, the motor voltage is
     -- positive), the number of pulses is negative.
     pulseLeft := -pulseLeft
-  else if (car.pwm1 > 0) && (car.pwm2 < 0) then do
+  else if (car.pwm1 > 0.0) && (car.pwm2 < 0.0) then do
     -- Judgment of the direction of movement of the trolley.
     -- Rotate left, the number of right pulses is negative,
     -- and the number of left pulses is positive.
     pulseRight := -pulseRight
-  { car with
-    countLeft  := 0,
-    countRight := 0,
-    stopLeft   := car.stopLeft + pulseLeft,
-    stopRight  := car.stopRight + pulseRight,
-    pulseLeft  := car.pulseLeft + pulseLeft,
-    pulseRight := car.pulseRight + pulseRight
-  }
+  car := {car with stopLeft := car.stopLeft + pulseLeft}
+  car := {car with stopRight := car.stopRight + pulseRight}
+  car := {car with pulseLeft := car.pulseLeft + pulseLeft}
+  car := {car with pulseRight := car.pulseRight + pulseRight}
+  car
   
 
 
@@ -359,8 +329,8 @@ def countPulse (car : BalanceCar) : BalanceCar := do
 def update (car : BalanceCar) (ax ay az gx gy gz : Int) : BalanceCar := do
   let mut car : BalanceCar := car
   car := countPulse car
-  car := {car with filter := car.filter.angleTest ax ay az gx gy gz}
-  car := {car with angleOut := kp * (car.filter.angle + angle0) + kd * car.filter.gyro.x}  
+  car := car.angleTest ax ay az gx gy gz
+  car := {car with angleOut := kp * (car.angle + angle0) + kd * car.gyroX}  
   car := {car with turnSpinDelay := car.turnSpinDelay - 1}
   if car.turnSpinDelay == 0 then do
     car := car.updateTurnSpin
@@ -477,132 +447,171 @@ def main (args : List String) : IO Unit := do
 -- Debugging and tinkering
 -- - - - - - - - - - - - - - - - - - - - - - - - -
 
-structure Measurements where
-  ax : Int
-  ay : Int
-  az : Int
-  gx : Int
-  gy : Int
-  gz : Int
-  countL : Int
-  countR : Int
 
-def checkUpdate (inputs : List Measurements) : (Float × Float) := do
-  let mut car := BalanceCar.initial
-  for m in inputs do
-    car := {car with 
-            countLeft := m.countL, 
-            countRight := m.countR}
-    car := car.update m.ax m.ay m.az m.gx m.gy m.gz
-  (car.pwm1, car.pwm2)
+-- def BalanceCar.displayFields (car : BalanceCar) : IO Unit := do
+--   IO.eprintln $ "- - - - - - - - VARIABLES - - - - - - - - "
+--   IO.eprintln $ "pulseRight: " ++ (toString car.pulseRight)
+--   IO.eprintln $ "pulseLeft: " ++ (toString car.pulseLeft)
+--   IO.eprintln $ "stopLeft: " ++ (toString car.stopLeft)
+--   IO.eprintln $ "stopRight: " ++ (toString car.stopRight)
+--   IO.eprintln $ "angleOut: " ++ (toString car.angleOut)
+--   IO.eprintln $ "pwm1: " ++ (toString car.pwm1)
+--   IO.eprintln $ "pwm2: " ++ (toString car.pwm2)
+--   IO.eprintln $ "speedFilter: " ++ (toString car.speedFilter)
+--   IO.eprintln $ "positions: " ++ (toString car.positions)
+--   IO.eprintln $ "turnMax: " ++ (toString car.turnMax)
+--   IO.eprintln $ "turnMin: " ++ (toString car.turnMin)
+--   IO.eprintln $ "turnSpin: " ++ (toString car.turnOut)
+--   IO.eprintln $ "resetPosition: " ++ (toString car.resetPosition)
+--   IO.eprintln $ "angle: " ++ (toString car.angle)
+--   IO.eprintln $ "angleDot: " ++ (toString car.angleDot)
+--   IO.eprintln $ "speedPI: " ++ (toString car.speedPI)
+--   IO.eprintln $ "gyroY: " ++ (toString car.gyroY)
+--   IO.eprintln $ "gyroX: " ++ (toString car.gyroX)
+--   IO.eprintln $ "gyroZ: " ++ (toString car.gyroZ)
+--   IO.eprintln $ "angle6: " ++ (toString car.angle6)
+--   IO.eprintln $ "p00: " ++ (toString car.p00)
+--   IO.eprintln $ "p01: " ++ (toString car.p01)
+--   IO.eprintln $ "p10: " ++ (toString car.p10)
+--   IO.eprintln $ "p11: " ++ (toString car.p11)
+--   IO.eprintln $ "pDot0: " ++ (toString car.pDot0)
+--   IO.eprintln $ "pDot1: " ++ (toString car.pDot1)
+--   IO.eprintln $ "pDot2: " ++ (toString car.pDot2)
+--   IO.eprintln $ "pDot3: " ++ (toString car.pDot3)
+--   IO.eprintln $ "qBias: " ++ (toString car.qBias)
+--   IO.eprintln $ "speedPIDelay: " ++ (toString car.speedPIDelay)
+--   IO.eprintln $ "turnSpinDelay: " ++ (toString car.turnSpinDelay)
+--   IO.eprintln $ "turnSpin: " ++ (toString car.turnSpin)
+--   IO.eprintln $ "countLeft: " ++ (toString car.countLeft)
+--   IO.eprintln $ "countRight: " ++ (toString car.countRight)
+--   IO.eprintln $ "forward: " ++ (toString car.ctrl.forward)
+--   IO.eprintln $ "reverse: " ++ (toString car.ctrl.reverse)
+--   IO.eprintln $ "turnLeft: " ++ (toString car.ctrl.turnLeft)
+--   IO.eprintln $ "turnRight: " ++ (toString car.ctrl.turnRight)
+--   IO.eprintln $ "spinLeft: " ++ (toString car.ctrl.spinLeft)
+--   IO.eprintln $ "spinRight: " ++ (toString car.ctrl.spinRight)
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩]
--- Expected:
--- car.pwm1 = 0.629091
--- car.pwm2 = 0.629091
+-- def checkUpdate (inputs : List (Int × Int × Int × Int × Int × Int × Int × Int)) : IO (Float × Float) := do
+--   IO.eprintln $ "Running car.update with "++(toString inputs.length)++" steps...\n"
+--   let mut car := BalanceCar.initial
+--   for (ax, ay, az, gx, gy, gz, l, r) in inputs do
+--     car := {car with 
+--             countLeft := l, 
+--             countRight := r}
+--     car := car.update ax ay az gx gy gz
+--     IO.eprintln $ "\ninput: "++(toString (ax, ay, az, gx, gy, gz, l, r))
+--     IO.eprintln $ "output: "++(toString (car.pwm1, car.pwm2))
+--     car.displayFields
+--   IO.eprintln $ "\n"
+--   (car.pwm1, car.pwm2)
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩]
--- Expected:
--- -- car.pwm1 = -255.000000
--- -- car.pwm2 = -255.000000
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0)]
+-- -- Expected:
+-- -- car.pwm1 = 0.629091
+-- -- car.pwm2 = 0.629091
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩]
--- Expected:
--- -- car.pwm1 = -255.000000
--- -- car.pwm2 = -255.000000
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0)]
+-- -- Expected:
+-- -- -- car.pwm1 = -255.000000
+-- -- -- car.pwm2 = -255.000000
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩]
--- Expected:
--- -- car.pwm1 = 0.0
--- -- car.pwm2 = 0.0
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50)]
+-- -- Expected:
+-- -- -- car.pwm1 = -255.000000
+-- -- -- car.pwm2 = -255.000000
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩]
--- Expected:
--- -- car.pwm1 = 1.695769
--- -- car.pwm2 = 2.275769
--- Got (1.419046, 2.552481)
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50)]
+-- -- Expected:
+-- -- -- car.pwm1 = 0.0
+-- -- -- car.pwm2 = 0.0
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩]
--- Expected:
--- -- car.pwm1 = -195.505330
--- -- car.pwm2 = -195.505330
--- Got (-195.571755, -195.438931)
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35)]
+-- -- Expected:
+-- -- -- car.pwm1 = 1.695769
+-- -- -- car.pwm2 = 2.275769
+-- -- Got (1.419046, 2.552481)
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 30, 38⟩]
--- Expected:
--- -- car.pwm1 = -255.000000
--- -- car.pwm2 = -255.000000
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35)]
+-- -- Expected:
+-- -- -- car.pwm1 = -195.505330
+-- -- -- car.pwm2 = -195.505330
+-- -- Got (-195.571755, -195.438931)
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 30, 38⟩,
-                   ⟨5, 10, 15,  0,  5,  8,  2, 10⟩]
--- Expected:
--- -- car.pwm1 = -255.000000
--- -- car.pwm2 = -255.000000
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 30, 38)]
+-- -- Expected:
+-- -- -- car.pwm1 = -255.000000
+-- -- -- car.pwm2 = -255.000000
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 30, 38⟩,
-                   ⟨5, 10, 15, 0, 5, 8,  2, 10⟩]
--- Expected:
--- -- car.pwm1 = -255.000000
--- -- car.pwm2 = -255.000000
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 30, 38),
+--                    (5, 10, 15,  0,  5,  8,  2, 10)]
+-- -- Expected:
+-- -- -- car.pwm1 = -255.000000
+-- -- -- car.pwm2 = -255.000000
+
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 30, 38),
+--                    (5, 10, 15, 0, 5, 8,  2, 10)]
+-- -- Expected:
+-- -- -- car.pwm1 = -255.000000
+-- -- -- car.pwm2 = -255.000000
 
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 30, 38⟩,
-                   ⟨5, 10, 15, 0, 5, 8,  2, 10⟩,
-                   ⟨50, -10, -15, -20, -25, -30, 20, 3⟩]
--- Expected:
--- -- car.pwm1 = 186.988441
--- -- car.pwm2 = 186.988441
--- Got (186.970771, 187.006190)
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 30, 38),
+--                    (5, 10, 15, 0, 5, 8,  2, 10),
+--                    (50, -10, -15, -20, -25, -30, 20, 3)]
+-- -- Expected:
+-- -- -- car.pwm1 = 186.988441
+-- -- -- car.pwm2 = 186.988441
+-- -- Got (186.970771, 187.006190)
 
-#eval checkUpdate [⟨0, 0, 0, 0, 0, 0, 0, 0⟩,
-                   ⟨100, 100, 100, 100, 100, 100, 0, 0⟩,
-                   ⟨256, 256, 256, 256, 256, 256, 50, 50⟩,
-                   ⟨90, 90, 90, 256, 256, 256, 50, 50⟩,
-                   ⟨(-100), (-100), (-100), (-100), (-100), (-100), 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 25, 35⟩,
-                   ⟨5, 10, 15, 20, 25, 30, 30, 38⟩,
-                   ⟨5, 10, 15, 0, 5, 8,  2, 10⟩,
-                   ⟨50, -10, -15, -20, -25, -30, 20, 3⟩,
-                   ⟨0, 0, 0, 0, 0, 0, 34, 39⟩]
+-- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
+--                    (100, 100, 100, 100, 100, 100, 0, 0),
+--                    (256, 256, 256, 256, 256, 256, 50, 50),
+--                    (90, 90, 90, 256, 256, 256, 50, 50),
+--                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 25, 35),
+--                    (5, 10, 15, 20, 25, 30, 30, 38),
+--                    (5, 10, 15, 0, 5, 8,  2, 10),
+--                    (50, -10, -15, -20, -25, -30, 20, 3),
+--                    (0, 0, 0, 0, 0, 0, 34, 39)]
 -- Expected:
 -- -- car.pwm1 = 239.256973
 -- -- car.pwm2 = 239.256973

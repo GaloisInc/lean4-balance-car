@@ -146,14 +146,23 @@ int turnr = 0; // Turn right sign
 int spinl = 0; // Rotate left sign
 int spinr = 0; // Right rotation sign
 
-////////////////// Ultrasonic velocity //////////////////
 
-int chaoshengbo = 0; // Ultrasound
-int tingzhi = 0; // stop
-int jishi = 0; // even if
-
-
-
+void initCar()
+{
+  car.pulseright = 0;
+  car.pulseleft = 0;
+  car.stopl = 0;
+  car.stopr = 0;
+  car.angleoutput = 0;
+  car.pwm1 = 0;
+  car.pwm2 = 0;
+  car.speeds_filterold = 0;
+  car.positions = 0;
+  car.turnmax = 0;
+  car.turnmin = 0;
+  car.turnout = 0;
+  car.flag1 = 0;
+}
 //////////////////////BalanceCar Methods///////////////////////
 double speedpiout()
 {
@@ -198,12 +207,12 @@ float turnspin()
     if(turnl == 1 || turnr == 1)
     {
      car.turnmax = 3;
-     car.turnmin =- 3;
+     car.turnmin = -3;
     }
     if( spinl == 1 || spinr == 1)
     {
-      car.turnmax=10;
-      car.turnmin=-10;
+      car.turnmax = 10;
+      car.turnmin = -10;
     }
     rotationratio = 5 / turnspeed;
     if (rotationratio < 0.5) rotationratio = 0.5;
@@ -215,6 +224,7 @@ float turnspin()
     spinonce = 0;
     turnspeed = 0;
   }
+
   if (turnl == 1 || spinl == 1)
   {
     car.turnout += rotationratio;
@@ -249,7 +259,7 @@ void pwma(double speedoutput)
     car.pwm2 = 0;
   }
   
-  if (angle6 > 10 || angle6 < -10 & turnl == 0 & turnr == 0 & spinl == 0 & spinr == 0 && front == 0 && back == 0)
+  if ((angle6 > 10 || angle6 < -10) && turnl == 0 && turnr == 0 && spinl == 0 && spinr == 0 && front == 0 && back == 0)
   {
     if(car.stopl + car.stopr > 1500 || car.stopl + car.stopr < -3500)
     {
@@ -274,13 +284,10 @@ void pwma(double speedoutput)
 void countpulse()
 {
 
-  lz = count_left;
-  rz = count_right;
+  lpluse = count_left;
+  rpluse = count_right;
   count_left = 0;
   count_right = 0;
-
-  lpluse = lz;
-  rpluse = rz;
 
 
   if ((car.pwm1 < 0) && (car.pwm2 < 0)) 
@@ -458,6 +465,14 @@ void setup() {
   MsTimer2::set(5, inter);
   MsTimer2::start();
 
+
+  // In the main function, cycle detection and superimposition
+  // of pulses to determine the speed of the trolley. Use level
+  // change to enter the pulse superposition. Increase the number
+  // of pulses of the motor to ensure the accuracy of the trolley.
+  attachInterrupt(0, Code_left, CHANGE);
+  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
+  initCar();
 }
 
 
@@ -528,17 +543,8 @@ void control()
 // ===       Main loop program body       ===
 void loop() {
 
-  // In the main function, cycle detection and superimposition
-  // of pulses to determine the speed of the trolley. Use level
-  // change to enter the pulse superposition. Increase the number
-  // of pulses of the motor to ensure the accuracy of the trolley.
-  attachInterrupt(0, Code_left, CHANGE);
-  attachPinChangeInterrupt(PinA_right, Code_right, CHANGE);
-
   // control
   control();
-
-
 }
 
 ////////////////////////////////////////pwm///////////////////////////////////
@@ -572,7 +578,7 @@ void Angletest()
   Kalman_Filter(Angle, Gyro_x); // Kalman filter
   // Rotation angle Z axis parameters
   if (gz > 32768) gz -= 65536; //Forced conversion 2g  1g
-  Gyro_z = -gz / 131; // Z axis parameter conversion
+  Gyro_z = -gz / 131.0; // Z axis parameter conversion
   accelz = az / 16.4;
 
   angleAx = atan2(ax, az) * 180 / PI; // Calculate the angle with the x axis

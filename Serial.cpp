@@ -17,22 +17,22 @@
 
 #define DEBUG 0
 
-#define LOG(fmt, ...) do \
-{ \
-  if (DEBUG) { \
-    fprintf(stderr, "[LOG] "); \
-    fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__); \
-  } \
-} while (0)
+#define LOG(fmt, ...) ((void)0) //do \
+// { \
+//   if (DEBUG) { \
+//     fprintf(stderr, "[LOG] "); \
+//     fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__); \
+//   } \
+// } while (0)
 
-#define CHECK_SERIAL_PORT() do \
-{ \
-  if (serial_port < 0) { \
-    fprintf(stderr, "ERROR: serial port is not initialized!"); \
-    fprintf(stderr, "       See `initializeSerialPort` in `BalanceCar.lean`."); \
-    exit(1); \
-  } \
-} while (0)
+#define CHECK_SERIAL_PORT() ((void)0) //do \
+// { \
+//   if (serial_port < 0) { \
+//     fprintf(stderr, "ERROR: serial port is not initialized!"); \
+//     fprintf(stderr, "       See `initializeSerialPort` in `BalanceCar.lean`."); \
+//     exit(1); \
+//   } \
+// } while (0)
 
 struct termios tty;
 int serial_port = -1;
