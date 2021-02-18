@@ -67,7 +67,6 @@ int16_t ax, ay, az, gx, gy, gz;
 
 
 // Declare custom variables
-int time;
 float angle, angle_dot;  // Balance angle value
 double Outputs = 0; //Speed DIP Set point, input, output
 
@@ -78,15 +77,12 @@ float Q;
 float Gyro_y; // Y-axis gyroscope data temporary storage
 float Gyro_x;
 float Gyro_z;
-float Angle_ax; // Tilt angle calculated from acceleration
-float Angle_ay;
 float angleAx;
 float angle6;
 #define K1 0.05 // Weight of accelerometer value
 float Angle; // The final tilt angle of the trolley calculated by the first-order complementary filter
 #define angle0 0.00 // Mechanical balance angle
 float accelz = 0;
-int slong;
 
 //********************angle data*********************//
 
@@ -349,6 +345,18 @@ void angleout()
   car.angleoutput = kp * (angle + angle0) + kd * Gyro_x;//PD 角度环控制
 }
 
+// #define DEBUG
+
+#ifdef DEBUG
+volatile bool ready = false; // don't start sending data until we're ready to receive it all (we don't want to miss any)
+// Temporary variables to collect values to be sent all at once 
+// to an external process for comparison.
+int16_t tx_ax, tx_ay, tx_az, tx_gx, tx_gy, tx_gz;
+long tx_count_right, tx_count_left;
+long iteration = 0;
+#endif
+
+
 /////////////////////////////////////////////////////////////////////////////
 ////////////////// Interrupt timing 5ms timing interrupt ////////////////////
 /////////////////////////////////////////////////////////////////////////////
@@ -361,9 +369,18 @@ void inter()
   // be opened here. But in the timed interrupt, the code executed cannot exceed
   // 5ms, otherwise it will destroy the overall interrupt.
   sei();
+#ifdef DEBUG
+  if (!ready) return;
+  tx_count_left = count_left; tx_count_right = count_right;
+#endif
+  
   countpulse(); // Pulse superposition subroutine
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+#ifdef DEBUG
+  tx_ax = ax; tx_ay = ay; tx_az = az; tx_gx = gx; tx_gy = gy; tx_gz = gz;
+#endif
   
   // Get angle and Kalman filter
   Angletest();
@@ -406,6 +423,29 @@ void inter()
     digitalWrite(IN3M, 0);
     analogWrite(PWMB, -car.pwm2);
   }
+
+#ifdef DEBUG
+  if (Serial.availableForWrite())
+  {
+    Serial.print("(");
+    Serial.print(iteration);
+    Serial.print(", (");
+    Serial.print(tx_count_left); Serial.print(", ");
+    Serial.print(tx_count_right);
+    Serial.print("), (");
+    Serial.print(tx_ax); Serial.print(", ");
+    Serial.print(tx_ay); Serial.print(", ");
+    Serial.print(tx_az); Serial.print(", ");
+    Serial.print(tx_gx); Serial.print(", ");
+    Serial.print(tx_gy); Serial.print(", ");
+    Serial.print(tx_gz);
+    Serial.print("), (");
+    Serial.print(car.pwm1, 5); Serial.print(", ");
+    Serial.print(car.pwm2, 5);
+    Serial.println("))");
+  }
+  iteration++;
+#endif
 }
 //////////////////////////////////////////////
 //////////// Interrupt timing ////////////////
@@ -449,7 +489,7 @@ void setup() {
   // Join the I2C bus
   Wire.begin();
 
-  Serial.begin(115200); // Open the serial port and set the baud rate to 9600
+  Serial.begin(115200); // Open the serial port and set the baud rate to 115200
   delay(1500);
   mpu.initialize(); // Initialize MPU6050
   delay(2);
@@ -542,9 +582,14 @@ void control()
 
 // ===       Main loop program body       ===
 void loop() {
-
-  // control
+#ifdef DEBUG
+  if (!ready && Serial.available())
+  {
+    ready = true;  
+  }
+#else
   control();
+#endif
 }
 
 ////////////////////////////////////////pwm///////////////////////////////////
@@ -554,7 +599,9 @@ void loop() {
 ////////////////////Pulse interrupt calculation////////////////////////////
 
 void Code_left() {
-
+#ifdef DEBUG
+  if (!ready) return;
+#endif
   count_left ++;
 
 } // Counting on the left speed code plate
@@ -562,7 +609,9 @@ void Code_left() {
 
 
 void Code_right() {
-
+#ifdef DEBUG
+  if (!ready) return;
+#endif
   count_right ++;
 
 } // Right speed code plate count

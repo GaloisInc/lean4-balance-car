@@ -1,6 +1,8 @@
 -- Port of roughly the following:
 -- https://gitlab-int.galois.com/andrew/lean4-robotics-car-libs/-/blob/master/BalanceCar/examples/bst_abc/bst_abc.ino
 
+import Lean.Data.Json
+
 namespace Float
 
 instance : Coe Int Float := ⟨Float.ofInt⟩
@@ -12,6 +14,9 @@ def constrain (n low high : Float) : Float :=
   else n
 
 def pi : Float := 3.141592653589793238462643
+
+
+@[extern "fabs"] constant abs : Float → Float
 
 end Float
 
@@ -444,176 +449,107 @@ def main (args : List String) : IO Unit := do
 
 
 -- - - - - - - - - - - - - - - - - - - - - - - - -
--- Debugging and tinkering
+-- Debugging 
 -- - - - - - - - - - - - - - - - - - - - - - - - -
 
+structure DebugSample where
+  iteration : Int
+  countLeft : Int
+  countRight : Int
+  ax : Int
+  ay : Int
+  az : Int
+  gx : Int
+  gy : Int
+  gz : Int
+  pwm1 : Float
+  pwm2 : Float
 
--- def BalanceCar.displayFields (car : BalanceCar) : IO Unit := do
---   IO.eprintln $ "- - - - - - - - VARIABLES - - - - - - - - "
---   IO.eprintln $ "pulseRight: " ++ (toString car.pulseRight)
---   IO.eprintln $ "pulseLeft: " ++ (toString car.pulseLeft)
---   IO.eprintln $ "stopLeft: " ++ (toString car.stopLeft)
---   IO.eprintln $ "stopRight: " ++ (toString car.stopRight)
---   IO.eprintln $ "angleOut: " ++ (toString car.angleOut)
---   IO.eprintln $ "pwm1: " ++ (toString car.pwm1)
---   IO.eprintln $ "pwm2: " ++ (toString car.pwm2)
---   IO.eprintln $ "speedFilter: " ++ (toString car.speedFilter)
---   IO.eprintln $ "positions: " ++ (toString car.positions)
---   IO.eprintln $ "turnMax: " ++ (toString car.turnMax)
---   IO.eprintln $ "turnMin: " ++ (toString car.turnMin)
---   IO.eprintln $ "turnSpin: " ++ (toString car.turnOut)
---   IO.eprintln $ "resetPosition: " ++ (toString car.resetPosition)
---   IO.eprintln $ "angle: " ++ (toString car.angle)
---   IO.eprintln $ "angleDot: " ++ (toString car.angleDot)
---   IO.eprintln $ "speedPI: " ++ (toString car.speedPI)
---   IO.eprintln $ "gyroY: " ++ (toString car.gyroY)
---   IO.eprintln $ "gyroX: " ++ (toString car.gyroX)
---   IO.eprintln $ "gyroZ: " ++ (toString car.gyroZ)
---   IO.eprintln $ "angle6: " ++ (toString car.angle6)
---   IO.eprintln $ "p00: " ++ (toString car.p00)
---   IO.eprintln $ "p01: " ++ (toString car.p01)
---   IO.eprintln $ "p10: " ++ (toString car.p10)
---   IO.eprintln $ "p11: " ++ (toString car.p11)
---   IO.eprintln $ "pDot0: " ++ (toString car.pDot0)
---   IO.eprintln $ "pDot1: " ++ (toString car.pDot1)
---   IO.eprintln $ "pDot2: " ++ (toString car.pDot2)
---   IO.eprintln $ "pDot3: " ++ (toString car.pDot3)
---   IO.eprintln $ "qBias: " ++ (toString car.qBias)
---   IO.eprintln $ "speedPIDelay: " ++ (toString car.speedPIDelay)
---   IO.eprintln $ "turnSpinDelay: " ++ (toString car.turnSpinDelay)
---   IO.eprintln $ "turnSpin: " ++ (toString car.turnSpin)
---   IO.eprintln $ "countLeft: " ++ (toString car.countLeft)
---   IO.eprintln $ "countRight: " ++ (toString car.countRight)
---   IO.eprintln $ "forward: " ++ (toString car.ctrl.forward)
---   IO.eprintln $ "reverse: " ++ (toString car.ctrl.reverse)
---   IO.eprintln $ "turnLeft: " ++ (toString car.ctrl.turnLeft)
---   IO.eprintln $ "turnRight: " ++ (toString car.ctrl.turnRight)
---   IO.eprintln $ "spinLeft: " ++ (toString car.ctrl.spinLeft)
---   IO.eprintln $ "spinRight: " ++ (toString car.ctrl.spinRight)
+namespace DebugSample
 
--- def checkUpdate (inputs : List (Int × Int × Int × Int × Int × Int × Int × Int)) : IO (Float × Float) := do
---   IO.eprintln $ "Running car.update with "++(toString inputs.length)++" steps...\n"
---   let mut car := BalanceCar.initial
---   for (ax, ay, az, gx, gy, gz, l, r) in inputs do
---     car := {car with 
---             countLeft := l, 
---             countRight := r}
---     car := car.update ax ay az gx gy gz
---     IO.eprintln $ "\ninput: "++(toString (ax, ay, az, gx, gy, gz, l, r))
---     IO.eprintln $ "output: "++(toString (car.pwm1, car.pwm2))
---     car.displayFields
---   IO.eprintln $ "\n"
---   (car.pwm1, car.pwm2)
+open Lean
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0)]
--- -- Expected:
--- -- car.pwm1 = 0.629091
--- -- car.pwm2 = 0.629091
+def parseInt (str : String) : IO Int :=
+  match Json.parse str with
+  | Except.ok js => 
+    match js.getInt? with
+    | none => throw $ IO.userError s!"Expected a Int but got {str}"
+    | some n => pure n
+  | Except.error e => throw $ IO.userError s!"Expected a Int but got {str}"
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0)]
--- -- Expected:
--- -- -- car.pwm1 = -255.000000
--- -- -- car.pwm2 = -255.000000
+def parseFloat (str : String) : IO Float :=
+  match str.split (λ x => x == '.') with
+  | [lhs,rhs] => do
+    let n ← if lhs == "0" 
+            then parseInt (rhs.dropWhile (λ c => c == '0'))
+            else if lhs == "-0" then parseInt ("-" ++ (rhs.dropWhile (λ c => c == '0')))
+            else parseInt (lhs ++ rhs)
+    let len := rhs.length
+    pure $ (Float.ofInt n) / (Float.ofNat (10 ^ len))
+  | _ => throw $ IO.userError s!"Expected a simple decimal literal, but got {str}"
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50)]
--- -- Expected:
--- -- -- car.pwm1 = -255.000000
--- -- -- car.pwm2 = -255.000000
+end DebugSample
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50)]
--- -- Expected:
--- -- -- car.pwm1 = 0.0
--- -- -- car.pwm2 = 0.0
+section
+open DebugSample
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35)]
--- -- Expected:
--- -- -- car.pwm1 = 1.695769
--- -- -- car.pwm2 = 2.275769
--- -- Got (1.419046, 2.552481)
+def parseSamples : IO (Array DebugSample) := do
+  let dataFile := "raw-debug-data.txt"
+  IO.println s!"Parsing samples from {dataFile}"
+  let mut lastIter := -1
+  let mut samples := #[]
+  for l in (← IO.FS.lines dataFile) do
+    match (l.split Char.isWhitespace).filter (λ s => s != "") with
+    | [i,l,r,ax,ay,az,gx,gy,gz,pmw1,pmw2] => do
+      let i := ← parseInt i
+      let l ← parseInt l
+      let r ← parseInt r
+      let ax ← parseInt ax
+      let ay ← parseInt ay
+      let az ← parseInt az
+      let gx ← parseInt gx
+      let gy ← parseInt gy
+      let gz ← parseInt gz
+      let pwm1 ← parseFloat pmw1
+      let pwm2 ← parseFloat pmw2
+      if i != (lastIter + 1) then
+        throw $ IO.userError s!"expected iteration {toString (lastIter+1)} but got {toString i}"
+      lastIter := i
+      let s :=
+        {iteration := i,
+         countLeft := l,
+         countRight := r,
+         ax := ax,
+         ay := ay,
+         az := az,
+         gx := gx,
+         gy := gy,
+         gz := gz,
+         pwm1 := pwm1,
+         pwm2 := pwm2}
+      samples := samples.push s
+    | _ =>
+      throw $ IO.userError s!"expected 11 space separated numbers but got {l}"
+  pure samples
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35)]
--- -- Expected:
--- -- -- car.pwm1 = -195.505330
--- -- -- car.pwm2 = -195.505330
--- -- Got (-195.571755, -195.438931)
-
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35),
---                    (5, 10, 15, 20, 25, 30, 30, 38)]
--- -- Expected:
--- -- -- car.pwm1 = -255.000000
--- -- -- car.pwm2 = -255.000000
-
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35),
---                    (5, 10, 15, 20, 25, 30, 30, 38),
---                    (5, 10, 15,  0,  5,  8,  2, 10)]
--- -- Expected:
--- -- -- car.pwm1 = -255.000000
--- -- -- car.pwm2 = -255.000000
-
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35),
---                    (5, 10, 15, 20, 25, 30, 30, 38),
---                    (5, 10, 15, 0, 5, 8,  2, 10)]
--- -- Expected:
--- -- -- car.pwm1 = -255.000000
--- -- -- car.pwm2 = -255.000000
+end
 
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35),
---                    (5, 10, 15, 20, 25, 30, 30, 38),
---                    (5, 10, 15, 0, 5, 8,  2, 10),
---                    (50, -10, -15, -20, -25, -30, 20, 3)]
--- -- Expected:
--- -- -- car.pwm1 = 186.988441
--- -- -- car.pwm2 = 186.988441
--- -- Got (186.970771, 187.006190)
 
--- #eval checkUpdate [(0, 0, 0, 0, 0, 0, 0, 0),
---                    (100, 100, 100, 100, 100, 100, 0, 0),
---                    (256, 256, 256, 256, 256, 256, 50, 50),
---                    (90, 90, 90, 256, 256, 256, 50, 50),
---                    ((-100), (-100), (-100), (-100), (-100), (-100), 25, 35),
---                    (5, 10, 15, 20, 25, 30, 25, 35),
---                    (5, 10, 15, 20, 25, 30, 30, 38),
---                    (5, 10, 15, 0, 5, 8,  2, 10),
---                    (50, -10, -15, -20, -25, -30, 20, 3),
---                    (0, 0, 0, 0, 0, 0, 34, 39)]
--- Expected:
--- -- car.pwm1 = 239.256973
--- -- car.pwm2 = 239.256973
--- Got (-255.000000, -255.000000)
+-- A control loop that compares our Lean implementation to values reported from
+-- the BalanceCar using the original C/Arduino code.
+def debugControlLoop (initCar : BalanceCar) (samples : Array DebugSample) : IO Unit := do
+  let ε := 2.5
+  IO.println s!"Running simulation on {toString samples.size} samples (i.e., {toString (samples.size / 200)} seconds of data)..."
+  let mut car := initCar
+  for s in samples do
+    car := {car with countLeft := s.countLeft, countRight := s.countRight}
+    car := car.update s.ax s.ay s.az s.gx s.gy s.gz
+    if Float.abs (s.pwm1 - car.pwm1) > ε then
+      throw $ IO.userError s!"[iteration {toString s.iteration}] Expected pwm1 approx. {toString s.pwm1} but got {toString car.pwm1}"
+    if Float.abs (s.pwm2 - car.pwm2) > ε then
+      throw $ IO.userError s!"[iteration {toString s.iteration}] Expected pwm2 approx. {toString s.pwm2} but got {toString car.pwm2}"
+  IO.println s!"All calculated PWM values were within {toString ε} of their expected value!"
 
+def debugMain (args : List String) : IO Unit := do
+  debugControlLoop BalanceCar.initial (← parseSamples)

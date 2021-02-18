@@ -1,6 +1,6 @@
 PKG = BalanceCar
 EXE = balance-car
-CPPFLAGS = -O3
+CPPFLAGS = -g #-O3
 include lean.mk
 
 CPP_SRCS = Serial.cpp
