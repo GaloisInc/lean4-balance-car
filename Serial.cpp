@@ -10,6 +10,8 @@
 #include <errno.h> // Error integer and strerror() function
 #include <termios.h> // Contains POSIX terminal control definitions
 #include <unistd.h> // write(), read(), close()
+#include <sys/ioctl.h>
+#include <linux/serial.h>
 
 // Lean4 headers
 #include <lean/object.h>
@@ -44,6 +46,13 @@ extern "C" lean_object * lean_initialize_serial_port(b_lean_obj_arg port_path, s
   // Open the serial port. Change device path as needed (currently set to an standard FTDI USB-UART cable type device)
   serial_port = open(lean_string_cstr(port_path), O_RDWR);
   LOG("serial_port = %d\n", serial_port);
+
+  struct serial_struct serial;
+  if (ioctl(serial_port, TIOCGSERIAL, &serial) == 0) {
+    serial.flags |= ASYNC_LOW_LATENCY;
+    ioctl(serial_port, TIOCSSERIAL, &serial);
+  }
+
   // Read in existing settings, and handle any error
   if(tcgetattr(serial_port, &tty) != 0) {
     fprintf(stderr, "ERROR for %s: %i from tcgetattr: %s\n",
