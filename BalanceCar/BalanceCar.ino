@@ -44,6 +44,8 @@ volatile long count_right = 0;
 //////////// Interrupt timing ////////////////
 //////////////////////////////////////////////
 
+volatile bool ready = false;
+
 void inter()
 {
   // Open interrupt. Due to the limitation of the AVR chip, no matter
@@ -53,9 +55,10 @@ void inter()
   // be opened here. But in the timed interrupt, the code executed cannot exceed
   // 5ms, otherwise it will destroy the overall interrupt.
   sei();
+  if (!ready) return;
   //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
   mpu.getMotion6(&axis[0], &axis[1], &axis[2], &axis[3], &axis[4], &axis[5]);
-  if (Serial.availableForWrite() >= (sizeof('P') + sizeof('D') + sizeof('X') + (2 * sizeof(long)) + sizeof(axis)))
+  if (Serial.availableForWrite())
   {
     Serial.write('P');
     Serial.write('D');
@@ -155,12 +158,14 @@ void serial_rx()
 ////////////////////Pulse interrupt calculation////////////////////////////
 
 void Code_left() {
+  if (!ready) return;
   count_left++;
 } // Counting on the left speed code plate
 
 
 
 void Code_right() {
+  if (!ready) return;
   count_right++;
 } // Right speed code plate count
 
@@ -169,6 +174,20 @@ void Code_right() {
 
 // ===       Main loop program body       ===
 void loop() {
-  // receive commands over serial
-  serial_rx();
+  if (!ready)
+  {
+    if (Serial.available())
+    {
+      ready = true;
+      // read the ready flag byte
+      Serial.read();
+      // receive commands over serial
+      serial_rx();
+    }
+  }
+  else
+  {
+    // receive commands over serial
+    serial_rx();
+  }
 }

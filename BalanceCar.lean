@@ -378,6 +378,7 @@ constant initializeSerialPort (portPath : @& String) (baudRate : UInt16) : IO Un
 -- constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
 -- @[extern "lean_analog_pin_write"]
 -- constant analogPinWrite  (mode1 mode2 : UInt8) (value1 value2 : Float) : IO Unit
+@[extern "lean_start_car"] constant startCar : IO Unit
 @[extern "lean_drive_car"]
 constant driveCar (mode1 mode2 : Bool) (value1 value2 : Float) : IO Unit
 @[extern "lean_rx_int16_as_int"] 
@@ -437,6 +438,7 @@ def main (args : List String) : IO Unit := do
       match BaudRate.ofNat? n with
       | some bps => do
         initializeSerialPort port bps.toUInt16
+        startCar
         controlLoop BalanceCar.initial
       | none => invalidBaudRate rate
     | none => invalidBaudRate rate

@@ -97,6 +97,14 @@ extern "C" lean_object * lean_initialize_serial_port(b_lean_obj_arg port_path, s
   return lean_io_result_mk_ok(lean_box(0));
 }
 
+extern "C" lean_object * lean_start_car(lean_object /* w */) {
+  LOG("entering lean_start_car\n");
+  CHECK_SERIAL_PORT();
+  buffer[0] = '!';
+  write(serial_port, buffer, 1);
+  LOG("exiting lean_analog_pin_write\n");
+  return lean_io_result_mk_ok(lean_box(0));
+}
 
 extern "C" lean_object * lean_drive_car(bool mode1, bool mode2, double val1, double val2, lean_object /* w */) {
   LOG("entering lean_drive_car\n");
