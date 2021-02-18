@@ -426,32 +426,9 @@ private def printSupportedBaudRates : IO Unit :=
   IO.println   "  Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
 
 
-unsafe
-def main (args : List String) : IO Unit := do
-  let invalidBaudRate : String → IO Unit := λ rate => do
-    IO.println $ "Invalid baude rate: " ++ rate
-    IO.println   "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
-  match args with
-  | [port, rate] =>
-    match String.toNat? rate with
-    | some n =>
-      match BaudRate.ofNat? n with
-      | some bps => do
-        initializeSerialPort port bps.toUInt16
-        startCar
-        controlLoop BalanceCar.initial
-      | none => invalidBaudRate rate
-    | none => invalidBaudRate rate
-  | _ => do
-    IO.println "usage: `balance-car PORT BAUDRATE`"
-    IO.println "e.g., `balance-car /dev/ttyS0 115200`"
-    IO.println "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
-
-
-
 
 -- - - - - - - - - - - - - - - - - - - - - - - - -
--- Debugging 
+-- Debugging/Simulation Code
 -- - - - - - - - - - - - - - - - - - - - - - - - -
 
 structure DebugSample where
@@ -471,49 +448,54 @@ namespace DebugSample
 
 open Lean
 
-def parseInt (str : String) : IO Int :=
+def parseInt (lineNum : Nat) (str : String) : IO Int :=
   match Json.parse str with
   | Except.ok js => 
     match js.getInt? with
-    | none => throw $ IO.userError s!"Expected a Int but got {str}"
+    | none => throw $ IO.userError s!"Expected an Int on line {toString lineNum} but got {str}"
     | some n => pure n
-  | Except.error e => throw $ IO.userError s!"Expected a Int but got {str}"
+  | Except.error e => throw $ IO.userError s!"Expected an Int on line {toString lineNum} but got {str}"
 
-def parseFloat (str : String) : IO Float :=
+def parseFloat (lineNum : Nat) (str : String) : IO Float :=
   match str.split (λ x => x == '.') with
   | [lhs,rhs] => do
-    let n ← if lhs == "0" 
-            then parseInt (rhs.dropWhile (λ c => c == '0'))
-            else if lhs == "-0" then parseInt ("-" ++ (rhs.dropWhile (λ c => c == '0')))
-            else parseInt (lhs ++ rhs)
+    let n ← if lhs == "0"
+            then do
+              let rhs' := rhs.dropWhile (λ c => c == '0')
+              if rhs' == "" then pure 0 else parseInt lineNum rhs'
+            else if lhs == "-0" 
+              then do
+                let rhs' := rhs.dropWhile (λ c => c == '0')
+                if rhs' == "" then pure 0 else parseInt lineNum ("-"++rhs')
+            else parseInt lineNum (lhs ++ rhs)
     let len := rhs.length
     pure $ (Float.ofInt n) / (Float.ofNat (10 ^ len))
-  | _ => throw $ IO.userError s!"Expected a simple decimal literal, but got {str}"
+  | _ => throw $ IO.userError s!"Expected a simple decimal literal on line {toString lineNum} but got {str}"
 
 end DebugSample
 
 section
 open DebugSample
 
-def parseSamples : IO (Array DebugSample) := do
-  let dataFile := "raw-debug-data.txt"
+def parseSamples (dataFile : String) : IO (Array DebugSample) := do
   IO.println s!"Parsing samples from {dataFile}"
   let mut lastIter := -1
   let mut samples := #[]
-  for l in (← IO.FS.lines dataFile) do
+  let lines ← IO.FS.lines dataFile 
+  for l in lines, lNum in [0:lines.size] do
     match (l.split Char.isWhitespace).filter (λ s => s != "") with
     | [i,l,r,ax,ay,az,gx,gy,gz,pmw1,pmw2] => do
-      let i := ← parseInt i
-      let l ← parseInt l
-      let r ← parseInt r
-      let ax ← parseInt ax
-      let ay ← parseInt ay
-      let az ← parseInt az
-      let gx ← parseInt gx
-      let gy ← parseInt gy
-      let gz ← parseInt gz
-      let pwm1 ← parseFloat pmw1
-      let pwm2 ← parseFloat pmw2
+      let i := ← parseInt lNum i
+      let l ← parseInt lNum l
+      let r ← parseInt lNum r
+      let ax ← parseInt lNum ax
+      let ay ← parseInt lNum ay
+      let az ← parseInt lNum az
+      let gx ← parseInt lNum gx
+      let gy ← parseInt lNum gy
+      let gz ← parseInt lNum gz
+      let pwm1 ← parseFloat lNum pmw1
+      let pwm2 ← parseFloat lNum pmw2
       if i != (lastIter + 1) then
         throw $ IO.userError s!"expected iteration {toString (lastIter+1)} but got {toString i}"
       lastIter := i
@@ -554,4 +536,34 @@ def debugControlLoop (initCar : BalanceCar) (samples : Array DebugSample) : IO U
   IO.println s!"All calculated PWM values were within {toString ε} of their expected value!"
 
 def debugMain (args : List String) : IO Unit := do
-  debugControlLoop BalanceCar.initial (← parseSamples)
+  if args == [] then do
+    throw $ IO.userError "Expected one or more data files as command line arguments."
+  for dataFile in args do
+    IO.println s!"Data file `{dataFile}`"
+    debugControlLoop BalanceCar.initial (← parseSamples dataFile)
+
+
+def debugMode := false
+
+unsafe
+def main (args : List String) : IO Unit :=
+  if debugMode then debugMain args
+  else do
+    let invalidBaudRate : String → IO Unit := λ rate => do
+      IO.println $ "Invalid baude rate: " ++ rate
+      IO.println   "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."
+    match args with
+    | [port, rate] =>
+      match String.toNat? rate with
+      | some n =>
+        match BaudRate.ofNat? n with
+        | some bps => do
+          initializeSerialPort port bps.toUInt16
+          startCar
+          controlLoop BalanceCar.initial
+        | none => invalidBaudRate rate
+      | none => invalidBaudRate rate
+    | _ => do
+      IO.println "usage: `balance-car PORT BAUDRATE`"
+      IO.println "e.g., `balance-car /dev/ttyS0 115200`"
+      IO.println "Supported baud rates: 1200, 2400, 4800, 9600, 19200, 38400, 57600, or 115200."

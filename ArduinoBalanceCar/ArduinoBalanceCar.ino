@@ -18,7 +18,14 @@
 #include "MPU6050_6Axis_MotionApps20.h"
 #include "Wire.h"
 
+// Uncomment the below `#define` to enter DEBUG mode, where 
+// (1) the car will wait until it receives a byte before 
+// starting all other processes, and (2) the car will relay
+// left/right counts, data from the MPU6050, and computed
+// PWM1/PWM2 values accross the serial connection during 
+// the `inter` loop for debugging purposes.
 
+// #define DEBUG
 
 
 struct BalanceCar {
@@ -345,7 +352,6 @@ void angleout()
   car.angleoutput = kp * (angle + angle0) + kd * Gyro_x;//PD 角度环控制
 }
 
-// #define DEBUG
 
 #ifdef DEBUG
 volatile bool ready = false; // don't start sending data until we're ready to receive it all (we don't want to miss any)
@@ -427,22 +433,17 @@ void inter()
 #ifdef DEBUG
   if (Serial.availableForWrite())
   {
-    Serial.print("(");
-    Serial.print(iteration);
-    Serial.print(", (");
-    Serial.print(tx_count_left); Serial.print(", ");
-    Serial.print(tx_count_right);
-    Serial.print("), (");
-    Serial.print(tx_ax); Serial.print(", ");
-    Serial.print(tx_ay); Serial.print(", ");
-    Serial.print(tx_az); Serial.print(", ");
-    Serial.print(tx_gx); Serial.print(", ");
-    Serial.print(tx_gy); Serial.print(", ");
-    Serial.print(tx_gz);
-    Serial.print("), (");
-    Serial.print(car.pwm1, 5); Serial.print(", ");
-    Serial.print(car.pwm2, 5);
-    Serial.println("))");
+    Serial.print(iteration); Serial.print(" ");
+    Serial.print(tx_count_left); Serial.print(" ");
+    Serial.print(tx_count_right); Serial.print(" ");
+    Serial.print(tx_ax); Serial.print(" ");
+    Serial.print(tx_ay); Serial.print(" ");
+    Serial.print(tx_az); Serial.print(" ");
+    Serial.print(tx_gx); Serial.print(" ");
+    Serial.print(tx_gy); Serial.print(" ");
+    Serial.print(tx_gz); Serial.print(" ");
+    Serial.print(car.pwm1, 5); Serial.print(" ");
+    Serial.println(car.pwm2, 5);
   }
   iteration++;
 #endif

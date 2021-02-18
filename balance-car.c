@@ -17,7 +17,7 @@
 // #include "I2Cdev.h"
 // #include "MPU6050_6Axis_MotionApps20.h"
 // #include "Wire.h"
-
+#include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 
@@ -31,42 +31,20 @@ struct BalanceCar {
   double angleoutput;
   double pwm1;
   double pwm2;
-  double speeds_filterold;
-  double positions;
+//  double angleoutput;
+//  double pwm1;
+//  double pwm2;
+  float speeds_filterold;
+  float positions;
   int turnmax;
   int turnmin;
-  double turnout;
+  float turnout;
   int flag1;
 };
 
-double constrain(double val, double low, double high)
-{
-    if (val < low) val = low;
-    if (val > high) val = high;
-    return val;
-}
 
-// MPU6050 mpu; //Instantiate one MPU6050 Object, the object name ismpu
 struct BalanceCar car;
-
-void initCar()
-{
-  car.pulseright = 0;
-  car.pulseleft = 0;
-  car.stopl = 0;
-  car.stopr = 0;
-  car.angleoutput = 0;
-  car.pwm1 = 0;
-  car.pwm2 = 0;
-  car.speeds_filterold = 0;
-  car.positions = 0;
-  car.turnmax = 0;
-  car.turnmin = 0;
-  car.turnout = 0;
-  car.flag1 = 0;
-}
-
-int ax, ay, az, gx, gy, gz;
+int16_t ax, ay, az, gx, gy, gz;
 //TB6612FNG Drive module control signal
 #define IN1M 7
 #define IN2M 6
@@ -83,44 +61,47 @@ int ax, ay, az, gx, gy, gz;
 #define kd_turn 0.29 // Spin PID set up
 #define kp 38
 #define kd 0.58  // The parameters you need to modify
-#define qAngle 0.001
-#define qGyro 0.005
-#define rAngle 0.5
-#define c0 1
-#define K1 0.05 // Weight of accelerometer value
-#define angle0 0.00 // Mechanical balance angle
+
+
 #define PinA_left 2  //Interrupt 0
 #define PinA_right 4 //Interrupt 1
-#define sampleIntervalMs 5
-#define dt (sampleIntervalMs * 0.001) // Note: the value of dt is the filter sampling time
 
 
 
 
 
 // Declare custom variables
-int time;
-double angle, angle_dot;  // Balance angle value
+float angle, angle_dot;  // Balance angle value
 double Outputs = 0; //Speed DIP Set point, input, output
 
 
 
 //********************angle data*********************//
-double Gyro_y = 0; // Y-axis gyroscope data temporary storage
-double Gyro_x = 0;
-double Gyro_z = 0;
-double angle6 = 0;
-
+float Q;
+float Gyro_y; // Y-axis gyroscope data temporary storage
+float Gyro_x;
+float Gyro_z;
+float angleAx;
+float angle6;
+#define K1 0.05 // Weight of accelerometer value
+float Angle; // The final tilt angle of the trolley calculated by the first-order complementary filter
+#define angle0 0.00 // Mechanical balance angle
+float accelz = 0;
 
 //********************angle data*********************//
 
 //***************Kalman_Filter*********************//
-double P[2][2] = {{ 1, 0 },
+float P[2][2] = {{ 1, 0 },
   { 0, 1 }
 };
-double Pdot[4] = { 0, 0, 0, 0};
-
-double q_bias, PCt_0, PCt_1, E, K_0, K_1, t_0, t_1;
+float Pdot[4] = { 0, 0, 0, 0};
+#define qAngle 0.001
+#define qGyro 0.005
+#define rAngle 0.5
+#define c0 1
+float q_bias, angle_err, PCt_0, PCt_1, E, K_0, K_1, t_0, t_1;
+#define sampleIntervalMs 5
+#define dt (sampleIntervalMs * 0.001) // Note: the value of dt is the filter sampling time
 //***************Kalman_Filter*********************//
 
 // Declare MPU6050 control and status variables
@@ -139,8 +120,20 @@ int speedcc = 0;
 
 
 
+////////////////////// Pulse calculation /////////////////////////
+int lz = 0;
+int rz = 0;
+int rpluse = 0;
+int lpluse = 0;
+
 ////////////// Steering and rotation parameters ///////////////////////////////
 int turncount = 0; // Turn to intervention time calculation
+
+
+
+float turnoutput = 0;
+
+
 
 
 ////////////// Steering and rotation parameters ///////////////////////////////
@@ -153,17 +146,13 @@ int turnr = 0; // Turn right sign
 int spinl = 0; // Rotate left sign
 int spinr = 0; // Right rotation sign
 
-////////////////// Ultrasonic velocity //////////////////
 
-int chaoshengbo = 0; // Ultrasound
-int tingzhi = 0; // stop
-int jishi = 0; // even if
-
+//////////////////////// kalman /////////////////////////
 
 void Kalman_Filter(double angle_m, double gyro_m)
 {
   angle += (gyro_m - q_bias) * dt;
-  double angle_err = angle_m - angle;
+  angle_err = angle_m - angle;
   Pdot[0] = qAngle - P[0][1] - P[1][0];
   Pdot[1] = - P[1][1];
   Pdot[2] = - P[1][1];
@@ -188,32 +177,59 @@ void Kalman_Filter(double angle_m, double gyro_m)
   angle_dot = gyro_m - q_bias; // Optimal angular velocity
 }
 
-/////////////// Kalman filter calculation angle ////////////////////////
 void Angletest()
 {
   // int flag;
   // Balance parameter
-  double Angle = atan2(ay , az) * 57.3; // Angle calculation formula
+  Angle = atan2(ay , az) * 57.3; // Angle calculation formula
   Gyro_x = (gx - 128.1) / 131; // Angle conversion
   Kalman_Filter(Angle, Gyro_x); // Kalman filter
   // Rotation angle Z axis parameters
   if (gz > 32768) gz -= 65536; //Forced conversion 2g  1g
   Gyro_z = -gz / 131.0; // Z axis parameter conversion
+  accelz = az / 16.4;
 
-  double angleAx = atan2(ax, az) * 180 / PI; // Calculate the angle with the x axis
-  Gyro_y = -gy / 131.0; // Calculate angular velocity
+  angleAx = atan2(ax, az) * 180 / PI; // Calculate the angle with the x axis
+  Gyro_y = -gy / 131.00; // Calculate angular velocity
   angle6 = K1 * angleAx + (1 - K1) * (angle6 + Gyro_y * dt);
 }
 
 
+
+void initCar()
+{
+  car.pulseright = 0;
+  car.pulseleft = 0;
+  car.stopl = 0;
+  car.stopr = 0;
+  car.angleoutput = 0;
+  car.pwm1 = 0;
+  car.pwm2 = 0;
+  car.speeds_filterold = 0;
+  car.positions = 0;
+  car.turnmax = 0;
+  car.turnmin = 0;
+  car.turnout = 0;
+  car.flag1 = 0;
+}
+
+float constrain(float val, float low, float high)
+{
+  if (val < low)
+    return low;
+  if (val > high)
+    return high;
+  return val;
+}
+
 //////////////////////BalanceCar Methods///////////////////////
 double speedpiout()
 {
-  double speeds = (car.pulseleft + car.pulseright) * 1.0;
+  float speeds = (car.pulseleft + car.pulseright) * 1.0;
   car.pulseright = 0;
   car.pulseleft = 0;
   car.speeds_filterold *= 0.7;
-  double speeds_filter = car.speeds_filterold + speeds * 0.3;
+  float speeds_filter = car.speeds_filterold + speeds * 0.3;
   car.speeds_filterold = speeds_filter;
   car.positions += speeds_filter;
   car.positions += front;
@@ -229,13 +245,12 @@ double speedpiout()
 }
 
 
-double turnoutput = 0;
-
-void turnspin()
+float turnspin()
 {
   int spinonce = 0;
-  double turnspeed = 0;
-  double rotationratio = 0;
+  float turnspeed = 0;
+  float rotationratio = 0;
+  float turnout_put = 0;
   
   if (turnl == 1 || turnr == 1 || spinl == 1 || spinr == 1)
   {
@@ -255,8 +270,8 @@ void turnspin()
     }
     if( spinl == 1 || spinr == 1)
     {
-      car.turnmax=10;
-      car.turnmin=-10;
+      car.turnmax = 10;
+      car.turnmin = -10;
     }
     rotationratio = 5 / turnspeed;
     if (rotationratio < 0.5) rotationratio = 0.5;
@@ -268,6 +283,7 @@ void turnspin()
     spinonce = 0;
     turnspeed = 0;
   }
+
   if (turnl == 1 || spinl == 1)
   {
     car.turnout += rotationratio;
@@ -281,7 +297,8 @@ void turnspin()
   if (car.turnout > car.turnmax) car.turnout = car.turnmax;
   if (car.turnout < car.turnmin) car.turnout = car.turnmin;
 
-  turnoutput = -car.turnout * kp_turn - Gyro_z * kd_turn;
+  turnout_put = -car.turnout * kp_turn - Gyro_z * kd_turn;
+  return turnout_put;
 }
 
 void pwma(double speedoutput)
@@ -326,11 +343,10 @@ void pwma(double speedoutput)
 void countpulse()
 {
 
-  int lpluse = count_left;
-  int rpluse = count_right;
+  lpluse = count_left;
+  rpluse = count_right;
   count_left = 0;
   count_right = 0;
-
 
 
   if ((car.pwm1 < 0) && (car.pwm2 < 0)) 
@@ -392,128 +408,14 @@ void angleout()
   car.angleoutput = kp * (angle + angle0) + kd * Gyro_x;//PD 角度环控制
 }
 
-int motion_group = 0;
-
-void getMotion6()
-{
-    switch (motion_group)
-    {
-        case 1:
-            ax = ay = az = gx = gy = gz = 100; break;
-        case 2:
-            ax = ay = az = gx = gy = gz = 256; break;
-        case 3:
-            ax = ay = az = 90;
-            gx = gy = gz = 256;
-            break;
-        case 4:
-            ax = ay = az = gx = gy = gz = -100; break;
-        case 5:
-        case 6:
-            ax = 5;
-            ay = 10;
-            az = 15;
-            gx = 20;
-            gy = 25;
-            gz = 30;
-            break;
-        case 7:
-            ax = 5;
-            ay = 10;
-            az = 15;
-            gx = 0;
-            gy = 5;
-            gz = 8;
-            break;
-        case 8:
-            ax = 50;
-            ay = -10;
-            az = -15;
-            gx = -20;
-            gy = -25;
-            gz = -30;
-            break;        
-        case 0:
-        default:
-            motion_group = 0;
-            ax = ay = az = gx = gy = gz = 0; break;
-            break;
-    }
-
-    fprintf(
-        stderr,
-        "ax: %d, ay: %d, az: %d, gx: %d, gy: %d, gz: %d\n",
-        ax, ay, az, gx, gy, gz);
-
-    motion_group++;
-}
-
-void set_counts()
-{
-    switch (motion_group)
-    {
-        case 0:
-        case 1:
-            count_left = count_right = 0;
-            break;
-        case 2:
-        case 3:
-            count_left = count_right = 50;
-            break;
-        case 4:
-            count_left = 25;
-            count_right = 35;
-            break;
-        case 5:
-            count_left = 25;
-            count_right = 35;
-            break;
-        case 6:
-            count_left = 30;
-            count_right = 38;
-            break;
-        case 7:
-            count_left = 2;
-            count_right = 10;
-            break;
-        case 8:
-            count_left = 20;
-            count_right = 3;
-            break;
-        default:
-            count_left = 34;
-            count_right = 39;
-            break;
-    }
-    fprintf(
-        stderr,
-        "count_left: %ld, count_right: %ld\n",
-        count_left, count_right);
-}
-
-
-void digitalWrite(int pin, int pwm)
-{
-    //fprintf(stderr, "digitalWrite(%d, %d)\n", pin, pwm);
-}
-
-void analogWrite(int pin, int pwm)
-{
-    //fprintf(stderr, "analogWrite(%d, %d)\n", pin, pwm);
-}
 
 /////////////////////////////////////////////////////////////////////////////
 ////////////////// Interrupt timing 5ms timing interrupt ////////////////////
 /////////////////////////////////////////////////////////////////////////////
 void inter()
-{
-  set_counts();
+{  
   countpulse(); // Pulse superposition subroutine
-  //IIC obtains MPU6050 six-axis data ax ay az gx gy gz
-  // mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-  getMotion6();
  
-  
   // Get angle and Kalman filter
   Angletest();
   // Angle loop PD control
@@ -523,7 +425,7 @@ void inter()
   if (turncount > 1)
   {
     // Rotation function
-    turnspin();                                    
+    turnoutput = turnspin();                                    
     turncount = 0;
   }
   speedcc++;
@@ -536,29 +438,31 @@ void inter()
   // Total PWM output of trolley
   pwma(Outputs);
 
-  fprintf(stderr, "car.pwm1 = %f\n", car.pwm1);
-  fprintf(stderr, "car.pwm2 = %f\n", car.pwm2);
+  // if (car.pwm1 >= 0) {
+  //   digitalWrite(IN2M, 0);
+  //   digitalWrite(IN1M, 1);
+  //   analogWrite(PWMA, car.pwm1);
+  // } else {
+  //   digitalWrite(IN2M, 1);
+  //   digitalWrite(IN1M, 0);
+  //   analogWrite(PWMA, -car.pwm1);
+  // }
+  // //电机的正负输出判断        右电机判断
+  // if (car.pwm2 >= 0) {
+  //   digitalWrite(IN4M, 0);
+  //   digitalWrite(IN3M, 1);
+  //   analogWrite(PWMB, car.pwm2);
+  // } else {
+  //   digitalWrite(IN4M, 1);
+  //   digitalWrite(IN3M, 0);
+  //   analogWrite(PWMB, -car.pwm2);
+  // }
 
-  if (car.pwm1 >= 0) {
-    digitalWrite(IN2M, 0);
-    digitalWrite(IN1M, 1);
-    analogWrite(PWMA, car.pwm1);
-  } else {
-    digitalWrite(IN2M, 1);
-    digitalWrite(IN1M, 0);
-    analogWrite(PWMA, -car.pwm1);
-  }
-  //电机的正负输出判断        右电机判断
-  if (car.pwm2 >= 0) {
-    digitalWrite(IN4M, 0);
-    digitalWrite(IN3M, 1);
-    analogWrite(PWMB, car.pwm2);
-  } else {
-    digitalWrite(IN4M, 1);
-    digitalWrite(IN3M, 0);
-    analogWrite(PWMB, -car.pwm2);
-  }
 }
+
+
+//////////// Kalman filter calculation angle /////////////////////////
+
 
 
 void debugPrintCar()
@@ -607,15 +511,55 @@ void debugPrintCar()
 }
 
 
-int main()
+int main(int argc, char *argv[])
 {
-  initCar();
-
-  for (int i = 0; i < 10; i++)
+  if (argc <= 1)
   {
-      fprintf(stderr, "\n");
-      inter();
-      fprintf(stderr, "\n");
-      debugPrintCar();
+    printf("Expected a data file to simulate.\n");
   }
+
+  FILE* fp;
+  fp = fopen(argv[1], "r");
+  int maxLineLen = 512;
+  char buffer[maxLineLen];
+  int lineNum = 0;
+  int n;
+  double pwm1, pwm2;
+  double epsilon = 2.5;
+
+  initCar();
+    
+  while((n = fscanf(fp, "%d %ld %ld %d %d %d %d %d %d %lf %lf", 
+                &lineNum, &count_left, &count_right, &ax, &ay, &az, &gx, &gy, &gz, &pwm1, &pwm2))
+        == 11)
+  {
+    inter();
+    lineNum++;
+    if (fabs(car.pwm1 - pwm1) > epsilon)
+    {
+      printf("On iteration %d for pwm1 expected %lf but got %lf\n", lineNum, pwm1, car.pwm1);
+      exit(1);
+    }
+    if (fabs(car.pwm2 - pwm2) > epsilon)
+    {
+      printf("On iteration %d for pwm2 expected %lf but got %lf\n", lineNum, pwm2, car.pwm2);
+      exit(1);
+    }
+    car.pwm1 = pwm1;
+    car.pwm2 = pwm2;
+  }
+  if (feof(fp))
+  {
+    printf("Finished reading %d lines from %s\n", lineNum, argv[1]);
+  }
+  else if (ferror (fp))
+  {
+    perror ("The following error occurred while reading the file");
+  } else
+  {
+    printf("Reading stopped, but EOF nor an error was encountered...\n");
+  }
+
+  fclose(fp);
+  printf("Done!\n");
 }

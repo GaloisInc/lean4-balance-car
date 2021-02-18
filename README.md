@@ -6,32 +6,79 @@ Lean4 port of Arduino balance car controller
 Yahboom Coding Robot Car Balance Robot Electronics Programmable Kit for Adult Support C Language (UNO R3 Include)
 https://www.amazon.com/Yahboom-Compatible-Electronics-Programmable-Education/dp/B07FL2QR1V
 
-# Files
+# Important Files
 
-+ Arduino files
-  - `BalanceCar/BalanceCar.ino` (actual code running on the car)
-    + Code to initialize the car and send motion readings over serial every 5ms while 
-      while waiting for commands to come over serial on which motors to move.
-  - `BalanceCar/orig/tweaked_bst_abc/tweaked_bst_abc.ino`
-    * A simplified version of the balance car's _original_ arduino code -- keeps the car upright/balanced
-  - `BalanceCar/orig/tweaked_bst_abc/c/balance-car.c`
-    * modified version of `tweaked_bst_abc.ino` for testing purposes and comparison with the Lean code
-  - `arduino-deps`
-    * Arduino support libraries needed by the balance car
++ Arduino Depencencies
+  - The `arduino-deps` directory contains the Arduino support libraries
+    used by the balance car code. They need to be manually installed
+    in the location the Arduino IDE looks for such dependencies.
+
++ Arduino Balance Car files
+  - `ArduinoBalanceCar/ArduinoBalanceCar.ino` contains code which when run on
+    the Arduino will allow the car to balance. If has a debug mode (see the commented 
+    out `#define DEBUG`) which can be run to causes the car to (1) wait for an initial
+    signal to begin balancing and (2) relay the sampled data and some computational
+    results accross the serial connection to aid in debugging.
+
++ Arduino Lean Balance Car files
+  - `LeanBalanceCar/LeanBalanceCar.ino` contains code meant to be run on the Arduino
+    to communicate with an external Lean process over serial to get commands on
+    when to drive the motors. It waits until an initial byte is received before it
+    starts sending the 5ms interrupt-driven readings from the sensors over the
+    serial connection.
+
 + Lean controller code
-  - `BalanceCar.lean` (code running on the RPi4 to control the car)
-    * Lean code which reads data from the balance car over a serial port, perform calculations,
-      then send back commands to car to keep it balanced.
-  - `Serial.cpp`
-    * C code `BalanceCar.lean` relies on for serial TX/RX with the car
+  - `BalanceCar.lean` is the lean program meant to control the balance car when it is
+    running the aforementioned LeanBalanceCar.ino program. It depends on some C code
+    in `Serial.cpp` for the low-level details of the serial port communication.
+    + N.B., there is a `debugMode`  boolean flag in `BalanceCar.lean` which
+      makes the Lean executable, _instead_ of try to communicate over a serial connection
+      to control the car, take raw data files containing the content emitted
+      from the `ArduinoBalanceCar.ino` in `DEBUG` mode and compares the Lean
+      computed `pwm1`/`pwm2` values against what the car computed.
 
-## Lean4 controller build instructions
++ C Debugging Code
+  - `balance-car.c` is a copy-and-paste of the code in `ArduinoBalanceCar.ino`
+    modified to simulate the car calculations given a file containing 
+    the raw data emitted from `ArduinoBalanceCar.ino` in `DEBUG` mode. (It should
+    be trivial to build and run with any C compiler -- it has no local dependencies.)
+
++ Sampled Debug Data
+  - `raw-debut-data*.txt` files contain sampled debug data gathered from `ArduinoBalanceCar.ino`
+    in `DEBUG` mode.
+
+## Building the Lean4 controller
 
 1. Ensure [elan](https://github.com/Kha/elan) is installed (a tool for
    like `rustup` or `ghcup` but for `lean`).
 
 2. Run `leanmake` in the root directory of the repo.
 
-```
+3. If successful, the binary `build/bin/balance-car` should exist.
 
-```
+## Pairing the BalanceCar with the RPi4
+
++ `bluetoothctl`
+  + `scan on`
+  + turn on car
+  + `pair 00:20:10:08:56:DA` (code 1234)
+  + `trust 00:20:10:08:56:DA`
++ `sdptool add --channel=1 SP`
++ `sudo rfcomm connect hci0 00:20:10:08:56:DA`
+  + Reports `Connected /dev/rfcomm0 to 00:20:10:08:56:DA on channel 1` and
+    blocks until the process killed or the connection terminates.
+
+## Running the Car against the Lean Controller
+
+1. Ensure `LeanBalanceCar/LeanBalanceCar.ino` is loaded onto the Arduino.
+
+2. Build the Lean `balance-car` binary on the RPi4.
+
+3. Turn the Car on.
+
+4. On the RPi4, run `sudo rfcomm connect hci0 00:20:10:08:56:DA` (assuming the
+   car has already been paired with the RPi4, as described in a previous section).
+   This will block this particular terminal.
+
+5. In another terminal, run `sudo ./build/bin/balance-car /dev/rfcomm0 115200`
+   to connect the Lean4 controller to the car.
