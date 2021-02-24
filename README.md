@@ -3,6 +3,8 @@ Lean4 port of an Arduino balance car controller. Specifically, the balance car t
 
 <img src="https://github.com/GaloisInc/lean4-balance-car/blob/images/overview.png?raw=true" alt="Architectural Overview" width="600"/>
 
+[Here](https://github.com/GaloisInc/lean4-balance-car/blob/images/lean4-balance-car.mov?raw=true) is a short video of the car balancing using this setup.
+
 # Balance Car Hardware
 
 Yahboom Coding Robot Car Balance Robot Electronics Programmable Kit for Adult Support C Language (UNO R3 Include)
