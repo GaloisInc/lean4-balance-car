@@ -1,5 +1,7 @@
 # lean4-balance-car
-Lean4 port of Arduino balance car controller
+Lean4 port of an Arduino balance car controller. Specifically, the balance car transmits sensor readings via a bluetooth serial connection to a Lean4 controller running on a Raspberry Pi 4, which replies with commands to keep the car balanced.
+
+<img src="https://github.com/GaloisInc/lean4-balance-car/blob/images/overview.png?raw=true" alt="Architectural Overview" width="600"/>
 
 # Balance Car Hardware
 
