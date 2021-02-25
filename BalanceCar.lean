@@ -399,7 +399,7 @@ constant waitForHeader : IO Unit
 --     pure ' '
 
 
-unsafe 
+partial -- intended to loop indefinitely
 def controlLoop (car : BalanceCar) : IO Unit := do
   waitForHeader
   let l ← rxLongAsInt
@@ -545,7 +545,7 @@ def debugMain (args : List String) : IO Unit := do
 
 def debugMode := false
 
-unsafe
+
 def main (args : List String) : IO Unit :=
   if debugMode then debugMain args
   else do
