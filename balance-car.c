@@ -5,18 +5,15 @@
 
    See also https://create.arduino.cc/projecthub/gunjalsuyog/phpoc-arduino-self-balancing-robot-with-bt-web-control-0afab9
 
+    UPDATE 17 March 2021:
+    Modified heavily by Andrew M Kent (andrew@galois.com), this file was originally intended to be run on an Arduino Uno
+    on a balance car. Now it is a functionally equivalent simulator, which reads in raw data from disk gathered from
+    actual Balance Car operation and performs the control calculations that the car would perform, checking that the
+    results match the original results the car produced when the data was gathered. This allowed us to restructure the
+    implementation (e.g., use fewer globals, use structs, etc) and ensure functionality was unchanged.
+
 */
-// #include <PinChangeInt.h>
 
-// #include <MsTimer2.h>
-// //Realizing Speed ​​PID Control by Using Speed ​​Measuring Code Disk to Count
-
-// //I2Cdev、MPU605 with PID_v1
-// // The class library needs to be installed in advance Arduino 
-// // under the class library folder.
-// #include "I2Cdev.h"
-// #include "MPU6050_6Axis_MotionApps20.h"
-// #include "Wire.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
@@ -31,9 +28,6 @@ struct BalanceCar {
   double angleoutput;
   double pwm1;
   double pwm2;
-//  double angleoutput;
-//  double pwm1;
-//  double pwm2;
   float speeds_filterold;
   float positions;
   int turnmax;

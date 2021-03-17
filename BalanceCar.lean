@@ -1,5 +1,11 @@
--- Port of roughly the following:
--- https://gitlab-int.galois.com/andrew/lean4-robotics-car-libs/-/blob/master/BalanceCar/examples/bst_abc/bst_abc.ino
+-- The control portion of the code is more-or-less a functional port of balance car code 
+-- that was distributed with the balance car kit we purchased on Amazon:
+-- Yahboom Coding Robot Car Balance Robot Electronics Programmable Kit for Adult Support C Language (UNO R3 Include)
+-- It appears an _updated_ version of that code has since been posted by the company on Github here:
+-- https://github.com/YahboomTechnology/Arduino-Balance-Car
+-- This code resembles other similar balance car project code that can be found on the web, e.g.:
+-- https://create.arduino.cc/projecthub/gunjalsuyog/phpoc-arduino-self-balancing-robot-with-bt-web-control-0afab9
+
 
 import Lean.Data.Json
 
@@ -371,13 +377,9 @@ def commandCar (car : BalanceCar) : Cmd → BalanceCar
   | stop      => {car with ctrl := Controller.initial}
 
 
-
+-- Function declaraions for C-implemented I/O functions
 @[extern "lean_initialize_serial_port"]
 constant initializeSerialPort (portPath : @& String) (baudRate : UInt16) : IO Unit
--- @[extern "lean_digital_pin_write"] 
--- constant digitalPinWrite (pin : UInt8) (value : Bool) : IO Unit
--- @[extern "lean_analog_pin_write"]
--- constant analogPinWrite  (mode1 mode2 : UInt8) (value1 value2 : Float) : IO Unit
 @[extern "lean_start_car"] constant startCar : IO Unit
 @[extern "lean_drive_car"]
 constant driveCar (mode1 mode2 : Bool) (value1 value2 : Float) : IO Unit
@@ -388,18 +390,7 @@ constant rxLongAsInt : IO Int
 @[extern "lean_wait_for_header"] 
 constant waitForHeader : IO Unit
 
--- @[extern "lean_rx_char_as_uint32"] 
--- constant rxCharAsUInt32 : IO UInt32
--- def rxChar : IO Char := do
---   let n ← rxCharAsUInt32
---   if h : isValidChar n
---   then pure ⟨n, h⟩
---   else do
---     IO.eprintln "WARNING: could not interpret nat is char."
---     pure ' '
-
-
-partial -- intended to loop indefinitely
+partial -- intended to loop indefinitely and is therefore partial
 def controlLoop (car : BalanceCar) : IO Unit := do
   waitForHeader
   let l ← rxLongAsInt
@@ -477,6 +468,9 @@ end DebugSample
 section
 open DebugSample
 
+-- Parses in a raw data file---containing accelerometer measurement data
+-- and computed pwm values---to compare against the Lean port's
+-- calculations.
 def parseSamples (dataFile : String) : IO (Array DebugSample) := do
   IO.println s!"Parsing samples from {dataFile}"
   let mut lastIter := -1

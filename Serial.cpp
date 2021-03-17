@@ -1,4 +1,4 @@
-// Linux serial port example here:
+// Serial port setup/initalization based on linux serial port example here:
 //   https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp/#full-example-standard-baud-rates
 // C library headers
 #include <stdio.h>

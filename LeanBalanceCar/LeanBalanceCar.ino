@@ -5,6 +5,15 @@
 
    See also https://create.arduino.cc/projecthub/gunjalsuyog/phpoc-arduino-self-balancing-robot-with-bt-web-control-0afab9
 
+  UPDATE 17 March 2021:
+  Modified heavily by Andrew M Kent (andrew@galois.com), primarily stripping out all of the controller code and adding
+  some simple serial communication logic which delegates the control calculations to process on the other end of
+  the serial connection.
+
+  Now the car waits for an initial "go" signal over the serial port, at which time it will read from the accelerometer
+  every 5ms and transmit the data across the serial connection. The car listens for serial responses which indicate
+  how to drive each motor.
+
 */
 #include <PinChangeInt.h>
 
